@@ -1,8 +1,11 @@
 'use client';
+import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { createClient } from '@/lib/supabase/client';
 import { BotToggle } from './BotToggle';
 import { AgentPromptCard } from './AgentPromptCard';
+import { PromptAssistant } from './PromptAssistant';
+import { AgentTester } from './AgentTester';
 import { LogOut } from 'lucide-react';
 import type { User } from '@supabase/supabase-js';
 
@@ -27,11 +30,22 @@ export function Dashboard({
 }) {
   const router = useRouter();
   const supabase = createClient();
+  const [prompts, setPrompts] = useState<Prompt[]>(initialPrompts);
 
   async function handleSignOut() {
     await supabase.auth.signOut();
     router.push('/login');
     router.refresh();
+  }
+
+  function handlePromptUpdated(agentKey: string, newPrompt: string) {
+    setPrompts((arr) =>
+      arr.map((p) =>
+        p.agent_key === agentKey
+          ? { ...p, system_prompt: newPrompt, updated_at: new Date().toISOString(), updated_by: user?.email || null }
+          : p,
+      ),
+    );
   }
 
   return (
@@ -75,6 +89,15 @@ export function Dashboard({
         <div className="absolute left-0 top-0 w-12 h-px bg-[--color-amber] shadow-[0_0_4px_var(--color-amber-glow)]" />
       </div>
 
+      {/* Prompt Assistant */}
+      <div className="mb-10">
+        <PromptAssistant
+          prompts={prompts}
+          userEmail={user?.email || 'unknown'}
+          onSaved={handlePromptUpdated}
+        />
+      </div>
+
       {/* Section header */}
       <div className="mb-6">
         <h2 className="text-xl font-medium tracking-tight">Agentes</h2>
@@ -85,9 +108,18 @@ export function Dashboard({
 
       {/* Prompts */}
       <div className="space-y-6">
-        {initialPrompts.map((p) => (
-          <AgentPromptCard key={p.agent_key} prompt={p} userEmail={user?.email || 'unknown'} />
+        {prompts.map((p) => (
+          <AgentPromptCard
+            key={`${p.agent_key}-${p.updated_at}`}
+            prompt={p}
+            userEmail={user?.email || 'unknown'}
+          />
         ))}
+      </div>
+
+      {/* Tester */}
+      <div className="mt-10">
+        <AgentTester prompts={prompts} />
       </div>
 
       {/* Footer dim */}
