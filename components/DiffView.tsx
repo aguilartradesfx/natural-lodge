@@ -6,17 +6,34 @@ export function DiffView({ before, after }: { before: string; after: string }) {
   const parts = useMemo(() => diffLines(before, after), [before, after]);
 
   return (
-    <div className="rounded-xl border border-[--color-border] bg-[--color-bg] overflow-hidden">
-      <div className="text-xs font-normal leading-relaxed max-h-96 overflow-y-auto">
+    <div className="glass-inset overflow-hidden">
+      <div className="text-[11.5px] font-normal leading-relaxed max-h-96 overflow-y-auto py-1">
         {parts.map((part, i) => {
           const cls = part.added
-            ? 'bg-[--color-cyan]/10 text-[--color-cyan-glow] border-l-2 border-[--color-cyan]/50'
+            ? 'text-[--color-green-glow]'
             : part.removed
-            ? 'bg-red-500/10 text-red-300 border-l-2 border-red-500/40 line-through opacity-70'
-            : 'text-[--color-text-muted] border-l-2 border-transparent';
+            ? 'text-red-300 line-through opacity-70'
+            : 'text-[--color-cream-mute]';
+          const bg = part.added
+            ? 'rgba(127, 184, 138, 0.10)'
+            : part.removed
+            ? 'rgba(239, 68, 68, 0.10)'
+            : 'transparent';
+          const borderColor = part.added
+            ? 'var(--color-green-ring)'
+            : part.removed
+            ? 'rgba(239, 68, 68, 0.40)'
+            : 'transparent';
           const prefix = part.added ? '+ ' : part.removed ? '- ' : '  ';
           return (
-            <pre key={i} className={`whitespace-pre-wrap px-3 py-0.5 ${cls}`}>
+            <pre
+              key={i}
+              className={`whitespace-pre-wrap px-3 py-0.5 ${cls}`}
+              style={{
+                background: bg,
+                boxShadow: `inset 2px 0 0 ${borderColor}`,
+              }}
+            >
               {part.value
                 .split('\n')
                 .map((line, j, arr) =>
