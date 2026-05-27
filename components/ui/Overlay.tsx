@@ -32,6 +32,49 @@ function useLockScroll(open: boolean) {
   }, [open]);
 }
 
+const GLASS_PANEL_STYLE: React.CSSProperties = {
+  background: 'var(--color-glass-1)',
+  backdropFilter: 'blur(40px) saturate(180%)',
+  WebkitBackdropFilter: 'blur(40px) saturate(180%)',
+  boxShadow:
+    '0 1px 0 var(--color-glass-highlight) inset, 0 0 0 1px rgba(0,0,0,0.4), 0 40px 80px -20px rgba(0,0,0,0.7)',
+};
+
+function PanelHeader({
+  title,
+  subtitle,
+  onClose,
+}: {
+  title?: string;
+  subtitle?: string;
+  onClose: () => void;
+}) {
+  return (
+    <div className="flex items-start justify-between gap-4 px-6 py-5 border-b border-[--color-glass-border]">
+      <div>
+        {title && (
+          <h2 className="font-serif font-normal text-[20px] text-[--color-cream] tracking-tight leading-tight">
+            {title}
+          </h2>
+        )}
+        {subtitle && (
+          <p className="text-[12.5px] text-[--color-cream-mute] mt-1 leading-relaxed">
+            {subtitle}
+          </p>
+        )}
+      </div>
+      <button
+        onClick={onClose}
+        className="p-2 rounded-xl border border-[--color-glass-border] text-[--color-cream-dim] hover:text-[--color-cream] hover:bg-[--color-glass-2] transition shrink-0"
+        style={{ background: 'var(--color-glass-1)' }}
+        aria-label="Cerrar"
+      >
+        <X size={16} />
+      </button>
+    </div>
+  );
+}
+
 export function Modal({ open, onClose, title, subtitle, children }: CommonProps) {
   useEsc(open, onClose);
   useLockScroll(open);
@@ -43,23 +86,12 @@ export function Modal({ open, onClose, title, subtitle, children }: CommonProps)
         className="absolute inset-0 bg-black/60 backdrop-blur-sm"
         onClick={onClose}
       />
-      <div className="relative w-full max-w-3xl max-h-[calc(100vh-4rem)] flex flex-col rounded-2xl bg-[--color-surface] border border-[--color-border] shadow-2xl overflow-hidden">
+      <div
+        className="relative w-full max-w-3xl max-h-[calc(100vh-4rem)] flex flex-col rounded-[22px] border border-[--color-glass-border] overflow-hidden"
+        style={GLASS_PANEL_STYLE}
+      >
         {(title || subtitle) && (
-          <div className="flex items-start justify-between gap-4 px-6 py-4 border-b border-[--color-border]">
-            <div>
-              {title && <h2 className="text-lg font-semibold tracking-tight">{title}</h2>}
-              {subtitle && (
-                <p className="text-xs text-[--color-text-muted] mt-0.5">{subtitle}</p>
-              )}
-            </div>
-            <button
-              onClick={onClose}
-              className="p-1.5 rounded-md text-[--color-text-muted] hover:text-[--color-text] hover:bg-[--color-surface-elevated] transition"
-              aria-label="Cerrar"
-            >
-              <X size={18} />
-            </button>
-          </div>
+          <PanelHeader title={title} subtitle={subtitle} onClose={onClose} />
         )}
         <div className="flex-1 overflow-y-auto">{children}</div>
       </div>
@@ -74,32 +106,19 @@ export function Drawer({ open, onClose, title, subtitle, children }: CommonProps
   return (
     <>
       <div
-        className={`fixed inset-0 z-40 bg-black/50 backdrop-blur-sm transition-opacity duration-300 ${
+        className={`fixed inset-0 z-40 bg-black/60 backdrop-blur-sm transition-opacity duration-300 ${
           open ? 'opacity-100' : 'opacity-0 pointer-events-none'
         }`}
         onClick={onClose}
       />
       <aside
-        className={`fixed top-0 right-0 bottom-0 z-50 w-full sm:w-[420px] bg-[--color-surface] border-l border-[--color-border] shadow-2xl flex flex-col transition-transform duration-300 ${
-          open ? 'translate-x-0' : 'translate-x-full'
+        className={`fixed top-3 right-3 bottom-3 z-50 w-[calc(100%-1.5rem)] sm:w-[420px] rounded-[22px] border border-[--color-glass-border] flex flex-col overflow-hidden transition-transform duration-300 ${
+          open ? 'translate-x-0' : 'translate-x-[calc(100%+1rem)]'
         }`}
+        style={GLASS_PANEL_STYLE}
       >
         {(title || subtitle) && (
-          <div className="flex items-start justify-between gap-4 px-5 py-4 border-b border-[--color-border]">
-            <div>
-              {title && <h2 className="text-base font-semibold tracking-tight">{title}</h2>}
-              {subtitle && (
-                <p className="text-xs text-[--color-text-muted] mt-0.5">{subtitle}</p>
-              )}
-            </div>
-            <button
-              onClick={onClose}
-              className="p-1.5 rounded-md text-[--color-text-muted] hover:text-[--color-text] hover:bg-[--color-surface-elevated] transition"
-              aria-label="Cerrar"
-            >
-              <X size={18} />
-            </button>
-          </div>
+          <PanelHeader title={title} subtitle={subtitle} onClose={onClose} />
         )}
         <div className="flex-1 min-h-0 flex flex-col">{children}</div>
       </aside>

@@ -51,42 +51,58 @@ export function Dashboard({
 
   return (
     <>
-      <AppHeader
-        email={user?.email || null}
-        onSignOut={handleSignOut}
-        onOpenAssistant={() => setAssistantOpen(true)}
-        onOpenTester={() => setTesterOpen(true)}
-      />
+      <div className="relative z-[2] max-w-[1280px] mx-auto px-5 sm:px-9 pt-7 pb-20">
+        <AppHeader
+          email={user?.email || null}
+          onSignOut={handleSignOut}
+          onOpenAssistant={() => setAssistantOpen(true)}
+          onOpenTester={() => setTesterOpen(true)}
+        />
 
-      <main className="relative z-10 max-w-6xl mx-auto px-6 py-8">
-        {/* Hero compacto */}
-        <div className="mb-6">
-          <h1 className="text-2xl font-semibold tracking-tight">Agentes del bot</h1>
-          <p className="text-sm text-[--color-text-muted] mt-1">
-            Editá los prompts que definen la personalidad y el comportamiento de cada cerebro.
+        {/* Hero */}
+        <section className="mt-14 mb-8 px-1 fade-up fade-up-2">
+          <h1 className="font-serif font-light text-[38px] sm:text-[46px] leading-[1.05] tracking-[-0.025em] text-[--color-cream]">
+            Agentes{' '}
+            <em
+              className="not-italic font-normal italic"
+              style={{
+                background: 'linear-gradient(135deg, var(--color-light-glow), var(--color-mid))',
+                WebkitBackgroundClip: 'text',
+                backgroundClip: 'text',
+                color: 'transparent',
+              }}
+            >
+              del bot
+            </em>
+          </h1>
+          <p className="mt-3.5 text-[15.5px] text-[--color-cream-mute] leading-[1.55] max-w-[560px]">
+            Editá los prompts que definen la personalidad y el comportamiento de cada cerebro detrás del chatbot.
           </p>
-        </div>
+        </section>
 
-        {/* Bot status */}
-        <div className="mb-6">
+        {/* Status */}
+        <div className="fade-up fade-up-3 mt-9">
           <BotToggle initialState={initialState} userEmail={user?.email || 'unknown'} />
         </div>
 
-        {/* Workspace de agentes */}
-        <AgentWorkspace
-          prompts={prompts}
-          selectedKey={selectedKey}
-          onSelect={setSelectedKey}
-          onSaved={handlePromptUpdated}
-          userEmail={user?.email || 'unknown'}
-        />
+        {/* Agents */}
+        <div className="fade-up fade-up-4 mt-6">
+          <AgentWorkspace
+            prompts={prompts}
+            selectedKey={selectedKey}
+            onSelect={setSelectedKey}
+            onSaved={handlePromptUpdated}
+            userEmail={user?.email || 'unknown'}
+          />
+        </div>
 
-        <p className="mt-8 text-center font-mono text-[10px] text-[--color-text-dim]">
-          Los cambios son efectivos en el próximo mensaje del bot. Sin reiniciar n8n.
-        </p>
-      </main>
+        {/* Footnote */}
+        <div className="fade-up fade-up-5 mt-7 text-center font-mono text-[11px] text-[--color-cream-faint] tracking-[0.1em]">
+          Los cambios son efectivos en el próximo mensaje del bot · Sin reiniciar n8n
+        </div>
+      </div>
 
-      {/* Asistente — modal centrado */}
+      {/* Asistente — modal */}
       <Modal
         open={assistantOpen}
         onClose={() => setAssistantOpen(false)}
