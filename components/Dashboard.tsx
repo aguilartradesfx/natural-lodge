@@ -49,28 +49,38 @@ export function Dashboard({
   }
 
   return (
-    <main className="relative z-10 min-h-screen px-6 py-10 max-w-5xl mx-auto">
+    <main className="relative z-10 min-h-screen px-6 py-12 max-w-6xl mx-auto">
       {/* Header */}
-      <div className="flex items-start justify-between mb-12">
+      <div className="flex items-start justify-between mb-14 gap-6">
         <div>
-          <div className="inline-flex items-center gap-2 mb-3">
-            <div className="w-1.5 h-1.5 rounded-full bg-[--color-amber] shadow-[0_0_8px_var(--color-amber-glow)]" />
-            <span className="font-mono text-xs uppercase tracking-widest text-[--color-text-dim]">
-              Natural Lodge Caño Negro
+          <div className="inline-flex items-center gap-2 mb-4 px-3 py-1 rounded-full border border-[--color-border] bg-[--color-surface]/60 backdrop-blur">
+            <div className="w-1.5 h-1.5 rounded-full bg-[--color-cyan] shadow-[0_0_10px_var(--color-cyan-glow)]" />
+            <span className="font-mono text-[10px] uppercase tracking-[0.2em] text-[--color-text-muted]">
+              Natural Lodge · Caño Negro
             </span>
           </div>
-          <h1 className="text-4xl font-medium tracking-tight">Panel del chatbot</h1>
-          <p className="text-[--color-text-muted] mt-2 text-sm">
-            Editá los prompts y el estado global del bot de WhatsApp.
+          <h1 className="text-5xl font-semibold tracking-tight leading-[1.05]">
+            Panel del{' '}
+            <span className="bg-gradient-to-r from-[--color-cyan] to-[--color-cyan-glow] bg-clip-text text-transparent">
+              chatbot
+            </span>
+          </h1>
+          <p className="text-[--color-text-muted] mt-3 text-base max-w-xl">
+            Editá prompts, generá fragmentos con IA y probá conversaciones en vivo.
           </p>
         </div>
-        <div className="flex items-center gap-3">
-          <span className="font-mono text-xs text-[--color-text-dim] hidden sm:inline">
-            {user?.email}
-          </span>
+        <div className="flex items-center gap-3 shrink-0">
+          <div className="hidden sm:flex items-center gap-2 px-3 py-2 rounded-lg bg-[--color-surface]/60 border border-[--color-border]">
+            <div className="w-6 h-6 rounded-full bg-gradient-to-br from-[--color-cyan] to-[--color-cyan-glow] flex items-center justify-center text-[--color-bg] text-xs font-semibold">
+              {(user?.email || '?').slice(0, 1).toUpperCase()}
+            </div>
+            <span className="font-mono text-xs text-[--color-text-muted]">
+              {user?.email}
+            </span>
+          </div>
           <button
             onClick={handleSignOut}
-            className="p-2.5 rounded-lg bg-[--color-surface] border border-[--color-border] hover:border-[--color-border-hover] transition"
+            className="p-2.5 rounded-lg bg-[--color-surface] border border-[--color-border] hover:border-[--color-border-hover] hover:bg-[--color-surface-elevated] transition"
             title="Cerrar sesión"
           >
             <LogOut size={16} className="text-[--color-text-muted]" />
@@ -78,52 +88,50 @@ export function Dashboard({
         </div>
       </div>
 
-      {/* Bot toggle */}
-      <div className="mb-10">
-        <BotToggle initialState={initialState} userEmail={user?.email || 'unknown'} />
-      </div>
+      {/* Layout 2 columnas: contenido principal + teléfono sticky */}
+      <div className="grid gap-10 lg:grid-cols-[minmax(0,1fr)_380px]">
+        {/* Columna principal */}
+        <div className="min-w-0 space-y-10">
+          <BotToggle initialState={initialState} userEmail={user?.email || 'unknown'} />
 
-      {/* Divider con micro-detalle naranja */}
-      <div className="relative mb-10">
-        <div className="h-px bg-[--color-border]" />
-        <div className="absolute left-0 top-0 w-12 h-px bg-[--color-amber] shadow-[0_0_4px_var(--color-amber-glow)]" />
-      </div>
+          <div className="relative">
+            <div className="h-px bg-[--color-border]" />
+            <div className="absolute left-0 top-0 w-12 h-px bg-[--color-cyan] shadow-[0_0_6px_var(--color-cyan-glow)]" />
+          </div>
 
-      {/* Prompt Assistant */}
-      <div className="mb-10">
-        <PromptAssistant
-          prompts={prompts}
-          userEmail={user?.email || 'unknown'}
-          onSaved={handlePromptUpdated}
-        />
-      </div>
-
-      {/* Section header */}
-      <div className="mb-6">
-        <h2 className="text-xl font-medium tracking-tight">Agentes</h2>
-        <p className="font-mono text-xs text-[--color-text-dim] mt-1">
-          Tres agentes activos. El workflow decide cuál usar según el contexto del huésped.
-        </p>
-      </div>
-
-      {/* Prompts */}
-      <div className="space-y-6">
-        {prompts.map((p) => (
-          <AgentPromptCard
-            key={`${p.agent_key}-${p.updated_at}`}
-            prompt={p}
+          <PromptAssistant
+            prompts={prompts}
             userEmail={user?.email || 'unknown'}
+            onSaved={handlePromptUpdated}
           />
-        ))}
-      </div>
 
-      {/* Tester */}
-      <div className="mt-10">
-        <AgentTester prompts={prompts} />
+          <div>
+            <div className="mb-6">
+              <h2 className="text-2xl font-semibold tracking-tight">Agentes</h2>
+              <p className="font-mono text-xs text-[--color-text-dim] mt-1">
+                Tres agentes activos. El workflow decide cuál usar según el contexto del huésped.
+              </p>
+            </div>
+            <div className="space-y-6">
+              {prompts.map((p) => (
+                <AgentPromptCard
+                  key={`${p.agent_key}-${p.updated_at}`}
+                  prompt={p}
+                  userEmail={user?.email || 'unknown'}
+                />
+              ))}
+            </div>
+          </div>
+        </div>
+
+        {/* Columna derecha: teléfono sticky */}
+        <aside className="lg:sticky lg:top-8 lg:self-start">
+          <AgentTester prompts={prompts} />
+        </aside>
       </div>
 
       {/* Footer dim */}
-      <div className="mt-16 text-center">
+      <div className="mt-20 text-center">
         <p className="font-mono text-xs text-[--color-text-dim]">
           Cambios efectivos en cada mensaje nuevo del bot. Sin necesidad de reiniciar n8n.
         </p>
