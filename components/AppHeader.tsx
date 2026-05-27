@@ -15,35 +15,29 @@ export function AppHeader({
   const initial = (email || '?').slice(0, 1).toUpperCase();
 
   return (
-    <header
-      className="fade-up flex items-center justify-between gap-4 px-5 py-3.5 rounded-[22px] border border-[--color-glass-border]"
-      style={{
-        background: 'var(--color-glass-1)',
-        backdropFilter: 'blur(40px) saturate(180%)',
-        WebkitBackdropFilter: 'blur(40px) saturate(180%)',
-        boxShadow:
-          '0 1px 0 var(--color-glass-highlight) inset, 0 0 0 1px rgba(0,0,0,0.4), 0 20px 60px -20px rgba(0,0,0,0.6)',
-      }}
-    >
+    <header className="glass fade-up flex items-center justify-between gap-4 px-5 py-3.5 relative overflow-hidden">
+      {/* Sutil línea verde superior */}
+      <div className="absolute top-0 left-[20%] right-[20%] h-px green-line opacity-50" />
+
       {/* Brand */}
       <div className="flex items-center gap-3.5 min-w-0">
         <div
-          className="w-[42px] h-[42px] rounded-xl grid place-items-center shrink-0 font-serif text-[15px] font-medium text-[--color-light-glow]"
+          className="w-[44px] h-[44px] rounded-[14px] grid place-items-center shrink-0 text-[15px] font-medium text-[--color-green-glow]"
           style={{
-            background: 'linear-gradient(135deg, var(--color-ash-700), var(--color-ash-900))',
-            border: '1px solid var(--color-glass-border-strong)',
+            background:
+              'linear-gradient(135deg, rgba(127, 184, 138, 0.18), rgba(20, 32, 26, 0.6))',
             boxShadow:
-              '0 1px 0 var(--color-glass-highlight) inset, 0 0 24px -4px var(--color-accent-glow)',
+              '0 1px 0 rgba(255,255,255,0.18) inset, 0 -1px 0 rgba(0,0,0,0.3) inset, 0 0 24px -8px var(--color-green-ring), 0 0 0 1px rgba(255,255,255,0.06)',
             letterSpacing: '0.5px',
           }}
         >
           NL
         </div>
-        <div className="min-w-0 leading-[1.15]">
-          <div className="font-serif font-normal text-[17px] text-[--color-cream] tracking-tight truncate">
+        <div className="min-w-0 leading-[1.2]">
+          <div className="text-[16px] font-medium text-[--color-cream] tracking-tight truncate">
             Natural Lodge
           </div>
-          <div className="font-mono text-[10.5px] text-[--color-cream-mute] uppercase tracking-[0.12em] mt-0.5 truncate">
+          <div className="text-[10.5px] font-medium text-[--color-cream-mute] uppercase tracking-[0.16em] mt-[2px] truncate">
             Panel del Chatbot
           </div>
         </div>
@@ -58,28 +52,29 @@ export function AppHeader({
           <span className="hidden sm:inline">Probar chat</span>
         </HeaderPill>
         {email && (
-          <button
-            className="hidden md:inline-flex items-center gap-2 pl-1.5 pr-4 py-[7px] rounded-full border border-[--color-glass-border] text-[--color-cream-dim] text-[13px] font-medium transition"
-            style={{ background: 'var(--color-glass-2)', backdropFilter: 'blur(20px)' }}
+          <div
+            className="hidden md:inline-flex items-center gap-2 pl-1.5 pr-4 py-[7px] rounded-full text-[--color-cream-dim] text-[12.5px] font-normal glass-pill"
           >
             <span
-              className="w-[26px] h-[26px] rounded-full grid place-items-center text-[11px] font-semibold text-[--color-light-glow] border border-[--color-glass-border-strong]"
+              className="w-[26px] h-[26px] rounded-full grid place-items-center text-[11px] font-semibold text-[--color-green-glow]"
               style={{
-                background: 'linear-gradient(135deg, var(--color-ash-500), var(--color-ash-800))',
+                background:
+                  'linear-gradient(135deg, rgba(127, 184, 138, 0.22), rgba(40, 56, 46, 0.7))',
+                boxShadow:
+                  '0 1px 0 rgba(255,255,255,0.16) inset, 0 0 0 1px rgba(255,255,255,0.06)',
               }}
             >
               {initial}
             </span>
             <span className="truncate max-w-[180px]">{email}</span>
-          </button>
+          </div>
         )}
         <button
           onClick={onSignOut}
-          className="w-[38px] h-[38px] grid place-items-center rounded-xl border border-[--color-glass-border] text-[--color-cream-dim] hover:text-[--color-cream] transition"
-          style={{ background: 'var(--color-glass-2)' }}
+          className="w-[38px] h-[38px] grid place-items-center rounded-[12px] text-[--color-cream-dim] hover:text-[--color-cream] transition glass-pill"
           title="Cerrar sesión"
         >
-          <LogOut size={16} />
+          <LogOut size={15} />
         </button>
       </div>
     </header>
@@ -98,8 +93,7 @@ function HeaderPill({
   return (
     <button
       onClick={onClick}
-      className="inline-flex items-center gap-2 px-4 py-[9px] rounded-full border border-[--color-glass-border] text-[--color-cream-dim] text-[13px] font-medium cursor-pointer transition-all duration-200 hover:text-[--color-cream] hover:border-[--color-glass-border-strong] hover:-translate-y-[1px]"
-      style={{ background: 'var(--color-glass-2)', backdropFilter: 'blur(20px)' }}
+      className="glass-pill inline-flex items-center gap-2 px-4 py-[9px] rounded-full text-[--color-cream-dim] text-[12.5px] font-medium cursor-pointer transition-all duration-200 hover:text-[--color-cream] hover:-translate-y-[1px]"
     >
       <span className="opacity-85">{icon}</span>
       {children}

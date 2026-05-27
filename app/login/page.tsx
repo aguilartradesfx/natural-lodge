@@ -29,27 +29,25 @@ export default function LoginPage() {
     <main className="relative z-[2] min-h-screen flex items-center justify-center px-6">
       <div className="w-full max-w-md fade-up fade-up-1">
         <div className="mb-8 text-center">
-          <div
-            className="inline-flex items-center gap-2.5 mb-4 px-3.5 py-1.5 rounded-full border border-[--color-glass-border]"
-            style={{ background: 'var(--color-glass-2)', backdropFilter: 'blur(20px)' }}
-          >
+          <div className="glass-pill inline-flex items-center gap-2.5 mb-5 px-3.5 py-1.5 rounded-full">
             <span
               className="w-2 h-2 rounded-full animate-pulse-dot"
               style={{
-                background: 'var(--color-accent)',
-                boxShadow: '0 0 12px var(--color-accent-glow)',
+                background: 'var(--color-green-glow)',
+                boxShadow: '0 0 14px var(--color-green-ring)',
               }}
             />
-            <span className="font-mono text-[10.5px] uppercase tracking-[0.18em] text-[--color-cream-mute]">
+            <span className="text-[10.5px] font-medium uppercase tracking-[0.18em] text-[--color-cream-mute]">
               Natural Lodge · Admin
             </span>
           </div>
-          <h1 className="font-serif font-light text-[34px] leading-tight tracking-tight text-[--color-cream]">
+          <h1 className="text-[34px] font-light leading-tight tracking-[-0.025em] text-[--color-cream]">
             Panel del{' '}
             <em
-              className="not-italic font-normal italic"
+              className="italic font-medium"
               style={{
-                background: 'linear-gradient(135deg, var(--color-light-glow), var(--color-mid))',
+                background:
+                  'linear-gradient(135deg, var(--color-green-glow), var(--color-green))',
                 WebkitBackgroundClip: 'text',
                 backgroundClip: 'text',
                 color: 'transparent',
@@ -60,16 +58,9 @@ export default function LoginPage() {
           </h1>
         </div>
 
-        <div
-          className="rounded-[22px] border border-[--color-glass-border] p-8"
-          style={{
-            background: 'var(--color-glass-1)',
-            backdropFilter: 'blur(40px) saturate(180%)',
-            WebkitBackdropFilter: 'blur(40px) saturate(180%)',
-            boxShadow:
-              '0 1px 0 var(--color-glass-highlight) inset, 0 30px 60px -30px rgba(0,0,0,0.6)',
-          }}
-        >
+        <div className="glass-lifted relative p-8 overflow-hidden">
+          {/* Línea verde superior */}
+          <div className="absolute top-0 left-[30%] right-[30%] h-px green-line opacity-60" />
           <form onSubmit={handleLogin} className="space-y-5">
             <Field
               label="Email"
@@ -86,23 +77,30 @@ export default function LoginPage() {
               autoComplete="current-password"
             />
             {error && (
-              <p className="text-[13px] text-red-300 font-mono leading-relaxed">{error}</p>
+              <p className="text-[13px] font-medium text-red-300 leading-relaxed">{error}</p>
             )}
             <button
               type="submit"
               disabled={loading}
-              className="w-full py-3 rounded-[12px] text-[13.5px] font-semibold cursor-pointer transition-all duration-200 disabled:opacity-60 disabled:cursor-not-allowed"
-              style={{
-                background: loading
-                  ? 'rgba(255,255,255,0.10)'
-                  : 'linear-gradient(180deg, #f5f5f5, #cfcfcf)',
-                color: loading ? 'var(--color-cream-mute)' : '#101012',
-                border: 'none',
-                letterSpacing: '-0.005em',
-                boxShadow: loading
-                  ? 'none'
-                  : '0 1px 0 rgba(255,255,255,0.4) inset, 0 -1px 0 rgba(0,0,0,0.15) inset, 0 8px 24px -6px var(--color-accent-glow), 0 0 0 1px rgba(255,255,255,0.35)',
-              }}
+              className="w-full py-3 rounded-[14px] text-[13.5px] font-semibold cursor-pointer transition-all duration-200 disabled:opacity-60 disabled:cursor-not-allowed"
+              style={
+                loading
+                  ? {
+                      background:
+                        'linear-gradient(180deg, rgba(255,255,255,0.08), rgba(255,255,255,0.03))',
+                      color: 'var(--color-cream-mute)',
+                      boxShadow:
+                        '0 1px 0 rgba(255,255,255,0.06) inset, 0 0 0 1px rgba(255,255,255,0.04)',
+                    }
+                  : {
+                      background:
+                        'linear-gradient(180deg, var(--color-green-glow), var(--color-green))',
+                      color: '#0a1c11',
+                      letterSpacing: '-0.005em',
+                      boxShadow:
+                        '0 1px 0 rgba(255,255,255,0.4) inset, 0 -1px 0 rgba(0,0,0,0.18) inset, 0 8px 24px -6px var(--color-green-ring), 0 0 0 1px rgba(127,184,138,0.5)',
+                    }
+              }
             >
               {loading ? 'Entrando...' : 'Entrar'}
             </button>
@@ -128,7 +126,7 @@ function Field({
 }) {
   return (
     <div>
-      <label className="block font-mono text-[10.5px] uppercase tracking-[0.18em] text-[--color-cream-mute] mb-2">
+      <label className="block text-[10.5px] font-semibold uppercase tracking-[0.18em] text-[--color-cream-mute] mb-2">
         {label}
       </label>
       <input
@@ -137,12 +135,7 @@ function Field({
         onChange={(e) => onChange(e.target.value)}
         required
         autoComplete={autoComplete}
-        className="w-full rounded-[12px] border border-[--color-glass-border] px-4 py-3 text-[--color-cream] placeholder:text-[--color-cream-faint] focus:outline-none focus:border-[rgba(255,255,255,0.30)] transition"
-        style={{
-          background: 'rgba(0,0,0,0.35)',
-          boxShadow:
-            '0 1px 0 var(--color-glass-highlight) inset, 0 2px 0 rgba(0,0,0,0.3) inset',
-        }}
+        className="glass-inset w-full px-4 py-3 text-[--color-cream] text-[14px] font-normal placeholder:text-[--color-cream-faint] focus:outline-none focus:[box-shadow:0_1px_0_rgba(255,255,255,0.08)_inset,_0_2px_4px_rgba(0,0,0,0.4)_inset,_0_0_0_1px_var(--color-green-ring),_0_0_0_4px_var(--color-green-soft)] transition-shadow"
       />
     </div>
   );

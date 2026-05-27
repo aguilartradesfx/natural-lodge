@@ -42,46 +42,31 @@ export function BotToggle({
   }
 
   return (
-    <div
-      className="relative flex items-center justify-between gap-4 px-[26px] py-[22px] rounded-[22px] border border-[--color-glass-border] overflow-hidden"
-      style={{
-        background: 'var(--color-glass-1)',
-        backdropFilter: 'blur(40px) saturate(180%)',
-        WebkitBackdropFilter: 'blur(40px) saturate(180%)',
-        boxShadow:
-          '0 1px 0 var(--color-glass-highlight) inset, 0 30px 60px -30px rgba(0,0,0,0.5)',
-      }}
-    >
-      {/* Top accent line */}
-      <div
-        className="absolute top-0 left-[30%] w-[40%] h-px opacity-60"
-        style={{
-          background:
-            'linear-gradient(90deg, transparent, var(--color-accent-glow), transparent)',
-        }}
-      />
+    <div className="glass relative flex items-center justify-between gap-4 px-[26px] py-[22px] overflow-hidden">
+      {/* Línea superior verde */}
+      <div className="absolute top-0 left-[28%] right-[28%] h-px green-line opacity-60" />
 
       <div className="flex items-center gap-[18px] min-w-0">
-        {/* Pulse dot */}
+        {/* Pulse dot verde */}
         <div
-          className="w-[38px] h-[38px] rounded-full grid place-items-center shrink-0"
-          style={{ background: 'var(--color-accent-soft)' }}
+          className="w-[40px] h-[40px] rounded-full grid place-items-center shrink-0"
+          style={{ background: 'var(--color-green-soft)' }}
         >
           <span
-            className={`w-2.5 h-2.5 rounded-full ${enabled ? 'animate-pulse-dot' : ''}`}
+            className={`w-[11px] h-[11px] rounded-full ${enabled ? 'animate-pulse-dot' : ''}`}
             style={{
-              background: enabled ? 'var(--color-accent)' : 'var(--color-cream-faint)',
+              background: enabled ? 'var(--color-green-glow)' : 'var(--color-cream-faint)',
               boxShadow: enabled
-                ? '0 0 16px var(--color-accent-glow), 0 0 4px var(--color-accent)'
+                ? '0 0 18px var(--color-green-ring), 0 0 6px var(--color-green-glow)'
                 : 'none',
             }}
           />
         </div>
         <div className="min-w-0">
-          <div className="font-serif font-normal text-[19px] text-[--color-cream] leading-tight">
+          <div className="text-[18px] font-medium text-[--color-cream] leading-tight tracking-tight">
             {enabled ? 'Bot activo' : 'Bot apagado'}
           </div>
-          <div className="text-[13px] text-[--color-cream-mute] mt-[3px]">
+          <div className="text-[13px] font-normal text-[--color-cream-mute] mt-[4px]">
             {enabled
               ? 'Respondiendo a mensajes en WhatsApp'
               : 'No responde automáticamente'}
@@ -95,31 +80,34 @@ export function BotToggle({
         </div>
       </div>
 
-      {/* iOS-style toggle */}
+      {/* iOS-style toggle — verde cuando está activo */}
       <button
         onClick={toggle}
         disabled={saving}
-        className="relative w-[52px] h-[30px] rounded-full cursor-pointer transition-all duration-300 shrink-0 disabled:opacity-60"
+        className="relative w-[54px] h-[30px] rounded-full cursor-pointer transition-all duration-300 shrink-0 disabled:opacity-60"
         style={
           enabled
             ? {
-                background: 'var(--color-accent)',
+                background:
+                  'linear-gradient(180deg, var(--color-green-glow), var(--color-green))',
                 boxShadow:
-                  '0 0 0 1px rgba(0,0,0,0.4), 0 0 22px -4px var(--color-accent-glow), 0 1px 0 rgba(255,255,255,0.2) inset',
+                  '0 0 0 1px rgba(0,0,0,0.4), 0 0 22px -4px var(--color-green-ring), 0 1px 0 rgba(255,255,255,0.3) inset',
               }
             : {
-                background: 'rgba(255,255,255,0.10)',
-                boxShadow: '0 0 0 1px rgba(0,0,0,0.4)',
+                background:
+                  'linear-gradient(180deg, rgba(255,255,255,0.08), rgba(255,255,255,0.04))',
+                boxShadow:
+                  '0 0 0 1px rgba(0,0,0,0.4), 0 1px 0 rgba(255,255,255,0.06) inset',
               }
         }
         aria-pressed={enabled}
         title={enabled ? 'Apagar bot' : 'Encender bot'}
       >
         <span
-          className="absolute top-[3px] w-6 h-6 rounded-full bg-white"
+          className="absolute top-[3px] w-[24px] h-[24px] rounded-full bg-white"
           style={{
-            left: enabled ? '25px' : '3px',
-            boxShadow: '0 2px 6px rgba(0,0,0,0.3)',
+            left: enabled ? '27px' : '3px',
+            boxShadow: '0 2px 6px rgba(0,0,0,0.35), 0 0 0 0.5px rgba(0,0,0,0.06)',
             transition: 'left 0.25s cubic-bezier(0.5, 1.5, 0.5, 1)',
           }}
         />

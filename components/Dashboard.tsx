@@ -61,12 +61,13 @@ export function Dashboard({
 
         {/* Hero */}
         <section className="mt-14 mb-8 px-1 fade-up fade-up-2">
-          <h1 className="font-serif font-light text-[38px] sm:text-[46px] leading-[1.05] tracking-[-0.025em] text-[--color-cream]">
+          <h1 className="text-[40px] sm:text-[48px] font-light leading-[1.05] tracking-[-0.03em] text-[--color-cream]">
             Agentes{' '}
             <em
-              className="not-italic font-normal italic"
+              className="italic font-medium"
               style={{
-                background: 'linear-gradient(135deg, var(--color-light-glow), var(--color-mid))',
+                background:
+                  'linear-gradient(135deg, var(--color-green-glow), var(--color-green))',
                 WebkitBackgroundClip: 'text',
                 backgroundClip: 'text',
                 color: 'transparent',
@@ -75,7 +76,7 @@ export function Dashboard({
               del bot
             </em>
           </h1>
-          <p className="mt-3.5 text-[15.5px] text-[--color-cream-mute] leading-[1.55] max-w-[560px]">
+          <p className="mt-3.5 text-[15px] font-normal text-[--color-cream-mute] leading-[1.6] max-w-[580px]">
             Editá los prompts que definen la personalidad y el comportamiento de cada cerebro detrás del chatbot.
           </p>
         </section>
@@ -97,8 +98,9 @@ export function Dashboard({
         </div>
 
         {/* Footnote */}
-        <div className="fade-up fade-up-5 mt-7 text-center font-mono text-[11px] text-[--color-cream-faint] tracking-[0.1em]">
-          Los cambios son efectivos en el próximo mensaje del bot · Sin reiniciar n8n
+        <div className="fade-up fade-up-5 mt-7 text-center text-[11px] font-medium text-[--color-cream-faint] tracking-[0.12em] uppercase">
+          Los cambios son efectivos en el próximo mensaje del bot{' '}
+          <span className="opacity-50 mx-1">·</span> Sin reiniciar n8n
         </div>
       </div>
 

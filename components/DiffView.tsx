@@ -7,7 +7,7 @@ export function DiffView({ before, after }: { before: string; after: string }) {
 
   return (
     <div className="rounded-xl border border-[--color-border] bg-[--color-bg] overflow-hidden">
-      <div className="font-mono text-xs leading-relaxed max-h-96 overflow-y-auto">
+      <div className="text-xs font-normal leading-relaxed max-h-96 overflow-y-auto">
         {parts.map((part, i) => {
           const cls = part.added
             ? 'bg-[--color-cyan]/10 text-[--color-cyan-glow] border-l-2 border-[--color-cyan]/50'

@@ -172,7 +172,7 @@ export function PromptAssistant({
             value={fragment}
             onChange={(e) => setFragment(e.target.value)}
             rows={8}
-            className="w-full bg-[--color-bg] border border-[--color-border] rounded-lg p-3 text-sm font-mono leading-relaxed resize-y focus:outline-none focus:border-[--color-cyan]/40 transition"
+            className="w-full bg-[--color-bg] border border-[--color-border] rounded-lg p-3 text-sm font-medium leading-relaxed resize-y focus:outline-none focus:border-[--color-cyan]/40 transition"
             spellCheck={false}
           />
         </section>
@@ -250,12 +250,12 @@ export function PromptAssistant({
               >
                 <div className="px-3.5 py-2.5 flex items-center justify-between border-b border-[--color-border]">
                   <div className="flex items-center gap-2">
-                    <span className="font-mono text-[10px] uppercase tracking-wider text-[--color-text-dim]">
+                    <span className="font-medium text-[10px] uppercase tracking-wider text-[--color-text-dim]">
                       {m.agentKey}
                     </span>
                     <span className="text-xs font-medium">{display}</span>
                     {m.saved && (
-                      <span className="text-[10px] text-[--color-cyan] flex items-center gap-1 font-mono">
+                      <span className="text-[10px] text-[--color-cyan] flex items-center gap-1 font-medium">
                         <Check size={10} /> aplicado
                       </span>
                     )}
@@ -295,7 +295,7 @@ export function PromptAssistant({
                         value={m.after}
                         onChange={(e) => editMergeAfter(idx, e.target.value)}
                         rows={12}
-                        className="mt-2 w-full bg-[--color-bg] border border-[--color-border] rounded-md p-2.5 text-xs font-mono leading-relaxed resize-y focus:outline-none focus:border-[--color-cyan]/40"
+                        className="mt-2 w-full bg-[--color-bg] border border-[--color-border] rounded-md p-2.5 text-xs font-medium leading-relaxed resize-y focus:outline-none focus:border-[--color-cyan]/40"
                         spellCheck={false}
                       />
                     </details>

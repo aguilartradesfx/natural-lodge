@@ -302,7 +302,7 @@ export function AgentTester({
                 value={phone}
                 onChange={(e) => setPhone(e.target.value)}
                 placeholder="+50688887777"
-                className="w-full bg-black/30 border border-white/10 rounded-md px-2.5 py-1.5 text-xs text-[#e9edef] font-mono focus:outline-none focus:border-[--color-cyan]/40"
+                className="w-full bg-black/30 border border-white/10 rounded-md px-2.5 py-1.5 text-xs text-[#e9edef] focus:outline-none focus:border-[--color-cyan]/40"
               />
             </div>
           )}

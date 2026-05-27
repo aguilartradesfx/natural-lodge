@@ -32,14 +32,6 @@ function useLockScroll(open: boolean) {
   }, [open]);
 }
 
-const GLASS_PANEL_STYLE: React.CSSProperties = {
-  background: 'var(--color-glass-1)',
-  backdropFilter: 'blur(40px) saturate(180%)',
-  WebkitBackdropFilter: 'blur(40px) saturate(180%)',
-  boxShadow:
-    '0 1px 0 var(--color-glass-highlight) inset, 0 0 0 1px rgba(0,0,0,0.4), 0 40px 80px -20px rgba(0,0,0,0.7)',
-};
-
 function PanelHeader({
   title,
   subtitle,
@@ -50,23 +42,24 @@ function PanelHeader({
   onClose: () => void;
 }) {
   return (
-    <div className="flex items-start justify-between gap-4 px-6 py-5 border-b border-[--color-glass-border]">
+    <div className="relative flex items-start justify-between gap-4 px-6 py-5">
+      {/* Línea verde fina al borde inferior del header */}
+      <div className="absolute bottom-0 left-6 right-6 h-px green-line opacity-50" />
       <div>
         {title && (
-          <h2 className="font-serif font-normal text-[20px] text-[--color-cream] tracking-tight leading-tight">
+          <h2 className="text-[19px] font-semibold text-[--color-cream] tracking-tight leading-tight">
             {title}
           </h2>
         )}
         {subtitle && (
-          <p className="text-[12.5px] text-[--color-cream-mute] mt-1 leading-relaxed">
+          <p className="text-[12.5px] font-normal text-[--color-cream-mute] mt-1 leading-relaxed">
             {subtitle}
           </p>
         )}
       </div>
       <button
         onClick={onClose}
-        className="p-2 rounded-xl border border-[--color-glass-border] text-[--color-cream-dim] hover:text-[--color-cream] hover:bg-[--color-glass-2] transition shrink-0"
-        style={{ background: 'var(--color-glass-1)' }}
+        className="p-2 rounded-xl text-[--color-cream-dim] hover:text-[--color-cream] transition shrink-0 glass-pill"
         aria-label="Cerrar"
       >
         <X size={16} />
@@ -86,10 +79,7 @@ export function Modal({ open, onClose, title, subtitle, children }: CommonProps)
         className="absolute inset-0 bg-black/60 backdrop-blur-sm"
         onClick={onClose}
       />
-      <div
-        className="relative w-full max-w-3xl max-h-[calc(100vh-4rem)] flex flex-col rounded-[22px] border border-[--color-glass-border] overflow-hidden"
-        style={GLASS_PANEL_STYLE}
-      >
+      <div className="glass-lifted relative w-full max-w-3xl max-h-[calc(100vh-4rem)] flex flex-col overflow-hidden">
         {(title || subtitle) && (
           <PanelHeader title={title} subtitle={subtitle} onClose={onClose} />
         )}
@@ -112,10 +102,9 @@ export function Drawer({ open, onClose, title, subtitle, children }: CommonProps
         onClick={onClose}
       />
       <aside
-        className={`fixed top-3 right-3 bottom-3 z-50 w-[calc(100%-1.5rem)] sm:w-[420px] rounded-[22px] border border-[--color-glass-border] flex flex-col overflow-hidden transition-transform duration-300 ${
+        className={`glass-lifted fixed top-3 right-3 bottom-3 z-50 w-[calc(100%-1.5rem)] sm:w-[420px] flex flex-col overflow-hidden transition-transform duration-300 ${
           open ? 'translate-x-0' : 'translate-x-[calc(100%+1rem)]'
         }`}
-        style={GLASS_PANEL_STYLE}
       >
         {(title || subtitle) && (
           <PanelHeader title={title} subtitle={subtitle} onClose={onClose} />
