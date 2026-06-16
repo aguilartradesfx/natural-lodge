@@ -147,7 +147,7 @@ export async function createAppointment(input: {
   locationId?: string;
 }): Promise<GhlAppointment> {
   const data = await withRetry(() =>
-    ghlFetch<{ id?: string; appointmentId?: string }>('/calendars/events/appointments', {
+    ghlFetch<Record<string, unknown>>('/calendars/events/appointments', {
       method: 'POST',
       version: '2021-04-15',
       body: {
@@ -161,7 +161,26 @@ export async function createAppointment(input: {
       },
     }),
   );
-  return { id: (data.id || data.appointmentId)! };
+  const id = extractAppointmentId(data);
+  if (!id) {
+    // No tragamos el id en silencio: si GHL creó la cita pero no devolvió
+    // id reconocible, lo surfaceamos con la respuesta cruda para depurar.
+    throw new GhlError(200, JSON.stringify(data).slice(0, 500), '/calendars/events/appointments (sin id)');
+  }
+  return { id };
+}
+
+function extractAppointmentId(data: Record<string, unknown>): string | undefined {
+  const candidates = [
+    data.id,
+    data.appointmentId,
+    (data.event as Record<string, unknown> | undefined)?.id,
+    (data.appointment as Record<string, unknown> | undefined)?.id,
+    (data.calendarEvent as Record<string, unknown> | undefined)?.id,
+    (data.data as Record<string, unknown> | undefined)?.id,
+  ];
+  const found = candidates.find((c) => typeof c === 'string' && c.length > 0);
+  return found as string | undefined;
 }
 
 export async function deleteAppointment(appointmentId: string): Promise<void> {

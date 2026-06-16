@@ -15,6 +15,23 @@ export const dynamic = 'force-dynamic';
 
 const WORKFLOW = 'flujo_1_orbe';
 
+// Guarda el id de la cita en la reserva, chequeando el error (Supabase
+// NO lanza solo) y evitando el no-op silencioso de un id undefined.
+async function saveAppointmentId(
+  supabase: ReturnType<typeof createAdminClient>,
+  idReserva: string,
+  appointmentId: string | undefined,
+) {
+  if (!appointmentId) {
+    throw new Error(`createAppointment no devolvió id para ${idReserva}`);
+  }
+  const { error } = await supabase
+    .from('reservas_orbe')
+    .update({ ghl_appointment_id: appointmentId })
+    .eq('id_reserva_principal', idReserva);
+  if (error) throw error;
+}
+
 // Columnas que se escriben tanto en el historial como en la reserva.
 function reservaColumns(r: ReturnType<typeof parseOrbePayload>) {
   return {
@@ -163,10 +180,7 @@ export async function POST(req: Request) {
         title,
         locationId: contact.locationId,
       });
-      await supabase
-        .from('reservas_orbe')
-        .update({ ghl_appointment_id: appt.id })
-        .eq('id_reserva_principal', r.id_reserva_principal);
+      await saveAppointmentId(supabase, r.id_reserva_principal, appt.id);
       await addContactTags(contact.id, ['Confirmada ✅']);
     } else if (estado === 'Commit' && priorAppointmentId) {
       accion = 'actualizar';
@@ -179,10 +193,7 @@ export async function POST(req: Request) {
         title,
         locationId: contact.locationId,
       });
-      await supabase
-        .from('reservas_orbe')
-        .update({ ghl_appointment_id: appt.id })
-        .eq('id_reserva_principal', r.id_reserva_principal);
+      await saveAppointmentId(supabase, r.id_reserva_principal, appt.id);
       await addContactTags(contact.id, ['Confirmada ✅']);
     } else {
       accion = 'sin_accion';
