@@ -139,6 +139,17 @@ CREATE TABLE IF NOT EXISTS nlcn_chat_memory (
 
 CREATE INDEX IF NOT EXISTS idx_nlcn_chat_memory_session ON nlcn_chat_memory (session_key, created_at);
 
+-- IMPORTANTE: si reservas_orbe YA EXISTÍA (creada por n8n sin estas
+-- columnas), CREATE TABLE IF NOT EXISTS no las agrega. El trigger de abajo
+-- setea NEW.updated_at, así que la columna DEBE existir o todo UPDATE falla
+-- con "record new has no field updated_at" (error 42703). Garantizamos las
+-- columnas para tablas preexistentes:
+ALTER TABLE reservas_orbe ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ NOT NULL DEFAULT NOW();
+ALTER TABLE reservas_orbe ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW();
+ALTER TABLE reservas_orbe ADD COLUMN IF NOT EXISTS ghl_appointment_id TEXT;
+ALTER TABLE reservas_orbe ADD COLUMN IF NOT EXISTS etiqueta_actual TEXT;
+ALTER TABLE reservas_orbe ADD COLUMN IF NOT EXISTS etiqueta_actualizada_en TIMESTAMPTZ;
+
 -- updated_at automático en reservas_orbe (reutiliza la función del init).
 DROP TRIGGER IF EXISTS reservas_orbe_touch ON reservas_orbe;
 CREATE TRIGGER reservas_orbe_touch
