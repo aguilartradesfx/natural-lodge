@@ -1,0 +1,1014 @@
+{
+  "name": "Flujo 1 - Orbe Webhook → Postgres → GHL",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "89284a6f-dfd8-4590-82de-b078b018a66f",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        -2224,
+        256
+      ],
+      "id": "2f01c5b9-d2bd-431c-a2fb-24a69934a9e6",
+      "name": "Webhook Orbe",
+      "webhookId": "89284a6f-dfd8-4590-82de-b078b018a66f"
+    },
+    {
+      "parameters": {
+        "jsCode": "// ════════════════════════════════════════\n// PARSEO Y NORMALIZACIÓN DEL PAYLOAD ORBE\n// ════════════════════════════════════════\nconst input = $input.first().json;\nconst body = input.body || input;\nconst data = body.data || {};\nconst reservation = (data.hotelReservations || [])[0] || {};\nconst roomStay = ((reservation.roomStays || {}).roomStay || [])[0] || {};\nconst guest = (((reservation.resGuests || {}).resGuest || [])[0] || {}).profiles?.profileInfo?.[0]?.profile?.customer || {};\n\n// IDs de reserva\nconst uniqueIds = reservation.uniqueId || [];\nconst idPrincipal = uniqueIds[0]?.id || '';\nconst idSecundario = uniqueIds[1]?.id || '';\n\n// Conteos de huéspedes (buscar por código en vez de asumir índice)\nconst guestCounts = roomStay.guestCounts?.guestCount || [];\nconst adultos = guestCounts.find(g => String(g.ageQualifyingCode) === '10')?.count || 0;\nconst ninos = guestCounts.find(g => String(g.ageQualifyingCode) === '8')?.count || 0;\n\n// Habitación y tarifas\nconst roomType = roomStay.roomTypes?.roomType?.[0] || {};\nconst total = roomStay.total || {};\nconst baseRate = roomStay.roomRates?.roomRate?.[0]?.rates?.rate?.[0]?.base || {};\n\n// Origen y canal\nconst posSource = data.pos?.source?.[0] || {};\nconst resPosSource = reservation.pos?.source?.[0] || {};\n\n// Fechas: SIEMPRE en timezone Costa Rica (-06:00)\nconst checkInDate = roomStay.timeSpan?.start || '';\nconst checkOutDate = roomStay.timeSpan?.end || '';\n\n// IMPORTANTE: check-in 15:00, check-out 11:00 (no 15:00 como estaba antes)\nconst checkIn = checkInDate ? `${checkInDate}T15:00:00-06:00` : null;\nconst checkOut = checkOutDate ? `${checkOutDate}T11:00:00-06:00` : null;\n\n// fecha_creacion ahora viene del campo correcto del payload\nconst fechaCreacion = reservation.createDateTime || body.timeStamp || new Date().toISOString();\n\nreturn [{\n  json: {\n    id_evento: body.eventId || '',\n    timestamp_webhook: body.timeStamp || new Date().toISOString(),\n    nombre: guest.personName?.givenName || '',\n    apellido: guest.personName?.surname || '',\n    telefono: guest.telephone?.[0]?.phoneNumber || '',\n    email: guest.email?.[0]?.emailAddress || '',\n    id_reserva_principal: idPrincipal,\n    id_reserva_secundario: idSecundario,\n    estado: reservation.resStatus || '',\n    check_in: checkIn,\n    check_out: checkOut,\n    fecha_creacion_reserva: fechaCreacion,\n    adultos: Number(adultos),\n    ninos: Number(ninos),\n    tipo_habitacion: roomType.roomTypeCode || '',\n    cantidad_habitaciones: Number(roomType.numberOfUnits || 1),\n    monto_total: Number(total.amountAfterTax || 0),\n    moneda: total.currencyCode || 'USD',\n    monto_tarifa_base: Number(baseRate.amountAfterTax || 0),\n    nombre_hotel: posSource.property || '',\n    id_hotel: posSource.propertySourceId || '',\n    tipo_canal_venta: String(resPosSource.bookingChannel?.type || ''),\n    agente_origen: posSource.agentSine || ''\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -1984,
+        256
+      ],
+      "id": "08bf9fc4-1c09-444b-b99d-3e6e5383d0c3",
+      "name": "Parsear Payload Orbe"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT id FROM logs_webhook_orbe WHERE id_evento = $1 LIMIT 1;",
+        "options": {
+          "queryReplacement": "={{ $json.id_evento }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        -1760,
+        256
+      ],
+      "id": "2616296d-66cf-4fc6-985d-449f579d9b3f",
+      "name": "Check Duplicado",
+      "alwaysOutputData": true,
+      "credentials": {
+        "postgres": {
+          "id": "pGtF6jU4wFmQ5Uh3",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "cond-dup-001",
+              "leftValue": "={{ $json.id }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "empty"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        -1536,
+        256
+      ],
+      "id": "162ee1f2-8cfc-40fe-9cb9-366e93c25522",
+      "name": "IF No Es Duplicado"
+    },
+    {
+      "parameters": {
+        "schema": {
+          "__rl": true,
+          "value": "public",
+          "mode": "list"
+        },
+        "table": {
+          "__rl": true,
+          "value": "logs_webhook_orbe",
+          "mode": "list"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "nombre": "={{ $('Parsear Payload Orbe').item.json.nombre }}",
+            "apellido": "={{ $('Parsear Payload Orbe').item.json.apellido }}",
+            "telefono": "={{ $('Parsear Payload Orbe').item.json.telefono }}",
+            "email": "={{ $('Parsear Payload Orbe').item.json.email }}",
+            "id_reserva_principal": "={{ $('Parsear Payload Orbe').item.json.id_reserva_principal }}",
+            "id_reserva_secundario": "={{ $('Parsear Payload Orbe').item.json.id_reserva_secundario }}",
+            "estado": "={{ $('Parsear Payload Orbe').item.json.estado }}",
+            "check_in": "={{ $('Parsear Payload Orbe').item.json.check_in }}",
+            "check_out": "={{ $('Parsear Payload Orbe').item.json.check_out }}",
+            "fecha_creacion_reserva": "={{ $('Parsear Payload Orbe').item.json.fecha_creacion_reserva }}",
+            "adultos": "={{ $('Parsear Payload Orbe').item.json.adultos }}",
+            "ninos": "={{ $('Parsear Payload Orbe').item.json.ninos }}",
+            "tipo_habitacion": "={{ $('Parsear Payload Orbe').item.json.tipo_habitacion }}",
+            "cantidad_habitaciones": "={{ $('Parsear Payload Orbe').item.json.cantidad_habitaciones }}",
+            "monto_total": "={{ $('Parsear Payload Orbe').item.json.monto_total }}",
+            "moneda": "={{ $('Parsear Payload Orbe').item.json.moneda }}",
+            "monto_tarifa_base": "={{ $('Parsear Payload Orbe').item.json.monto_tarifa_base }}",
+            "nombre_hotel": "={{ $('Parsear Payload Orbe').item.json.nombre_hotel }}",
+            "id_hotel": "={{ $('Parsear Payload Orbe').item.json.id_hotel }}",
+            "tipo_canal_venta": "={{ $('Parsear Payload Orbe').item.json.tipo_canal_venta }}",
+            "agente_origen": "={{ $('Parsear Payload Orbe').item.json.agente_origen }}",
+            "timestamp_webhook": "={{ $('Parsear Payload Orbe').item.json.timestamp_webhook }}",
+            "id_evento": "={{ $('Parsear Payload Orbe').item.json.id_evento }}"
+          },
+          "matchingColumns": [],
+          "attemptToConvertTypes": true,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        -1328,
+        240
+      ],
+      "id": "483020d8-47fd-4c37-ad21-9782c02d167b",
+      "name": "Insert Historial",
+      "credentials": {
+        "postgres": {
+          "id": "pGtF6jU4wFmQ5Uh3",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "upsert",
+        "schema": {
+          "__rl": true,
+          "value": "public",
+          "mode": "list"
+        },
+        "table": {
+          "__rl": true,
+          "value": "reservas_orbe",
+          "mode": "list"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "nombre": "={{ $('Parsear Payload Orbe').item.json.nombre }}",
+            "apellido": "={{ $('Parsear Payload Orbe').item.json.apellido }}",
+            "telefono": "={{ $('Parsear Payload Orbe').item.json.telefono }}",
+            "email": "={{ $('Parsear Payload Orbe').item.json.email }}",
+            "id_reserva_principal": "={{ $('Parsear Payload Orbe').item.json.id_reserva_principal }}",
+            "id_reserva_secundario": "={{ $('Parsear Payload Orbe').item.json.id_reserva_secundario }}",
+            "estado": "={{ $('Parsear Payload Orbe').item.json.estado }}",
+            "check_in": "={{ $('Parsear Payload Orbe').item.json.check_in }}",
+            "check_out": "={{ $('Parsear Payload Orbe').item.json.check_out }}",
+            "fecha_creacion_reserva": "={{ $('Parsear Payload Orbe').item.json.fecha_creacion_reserva }}",
+            "adultos": "={{ $('Parsear Payload Orbe').item.json.adultos }}",
+            "ninos": "={{ $('Parsear Payload Orbe').item.json.ninos }}",
+            "tipo_habitacion": "={{ $('Parsear Payload Orbe').item.json.tipo_habitacion }}",
+            "cantidad_habitaciones": "={{ $('Parsear Payload Orbe').item.json.cantidad_habitaciones }}",
+            "monto_total": "={{ $('Parsear Payload Orbe').item.json.monto_total }}",
+            "moneda": "={{ $('Parsear Payload Orbe').item.json.moneda }}",
+            "monto_tarifa_base": "={{ $('Parsear Payload Orbe').item.json.monto_tarifa_base }}",
+            "nombre_hotel": "={{ $('Parsear Payload Orbe').item.json.nombre_hotel }}",
+            "id_hotel": "={{ $('Parsear Payload Orbe').item.json.id_hotel }}",
+            "tipo_canal_venta": "={{ $('Parsear Payload Orbe').item.json.tipo_canal_venta }}",
+            "agente_origen": "={{ $('Parsear Payload Orbe').item.json.agente_origen }}",
+            "timestamp_webhook": "={{ $('Parsear Payload Orbe').item.json.timestamp_webhook }}",
+            "id_evento": "={{ $('Parsear Payload Orbe').item.json.id_evento }}"
+          },
+          "matchingColumns": [
+            "id_reserva_principal"
+          ],
+          "attemptToConvertTypes": true,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        -1104,
+        240
+      ],
+      "id": "37d0c4a1-6ae5-44cd-9e7f-f2840df04ff4",
+      "name": "Upsert Reserva",
+      "credentials": {
+        "postgres": {
+          "id": "pGtF6jU4wFmQ5Uh3",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://services.leadconnectorhq.com/hooks/M649NrxtUHpNCNxTC5U1/webhook-trigger/616a3d67-e8c4-42d2-974b-3754c3f22d77",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"first_name\": \"{{ $json.nombre }}\",\n  \"last_name\": \"{{ $json.apellido }}\",\n  \"email\": \"{{ $json.email }}\",\n  \"phone\": \"{{ $json.telefono }}\",\n  \"estado\": \"{{ $json.estado }}\",\n  \"id_reserva\": \"{{ $json.id_reserva_principal }}\",\n  \"check_in\": \"{{ $json.check_in }}\",\n  \"check_out\": \"{{ $json.check_out }}\",\n  \"tipo_habitacion\": \"{{ $json.tipo_habitacion }}\",\n  \"adultos\": \"{{ $json.adultos }}\",\n  \"ninos\": \"{{ $json.ninos }}\",\n  \"monto_total\": \"{{ $json.monto_total }}\",\n  \"moneda\": \"{{ $json.moneda }}\"\n}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -880,
+        240
+      ],
+      "id": "2040fe25-cae3-47fc-b43f-c059f0344c54",
+      "name": "GHL Upsert Contacto"
+    },
+    {
+      "parameters": {
+        "amount": 3
+      },
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [
+        -656,
+        240
+      ],
+      "id": "77cb9fb1-87f3-417e-9ee1-78802a284633",
+      "name": "Esperar Sync GHL",
+      "webhookId": "1e0eb78f-c06b-41bc-aa0d-c3da1c68e4d3"
+    },
+    {
+      "parameters": {
+        "email": "={{ $('Parsear Payload Orbe').item.json.email }}",
+        "phone": "={{ $('Parsear Payload Orbe').item.json.telefono }}",
+        "additionalFields": {
+          "firstName": "={{ $('Parsear Payload Orbe').item.json.nombre }}",
+          "lastName": "={{ $('Parsear Payload Orbe').item.json.apellido }}"
+        },
+        "requestOptions": {}
+      },
+      "type": "n8n-nodes-base.highLevel",
+      "typeVersion": 2,
+      "position": [
+        -448,
+        240
+      ],
+      "id": "51537f57-9fbb-4b5a-9c01-f7c953129395",
+      "name": "GHL Obtener Contacto",
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000,
+      "credentials": {
+        "highLevelOAuth2Api": {
+          "id": "jS1L6ANVC3VxtcC6",
+          "name": "HighLevel account 2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "typeValidation": "strict"
+                },
+                "conditions": [
+                  {
+                    "id": "cond-cancel-001",
+                    "leftValue": "={{ $('Upsert Reserva').item.json.estado }}",
+                    "rightValue": "Cancel",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  },
+                  {
+                    "id": "cond-cancel-002",
+                    "leftValue": "={{ $('Upsert Reserva').item.json.ghl_appointment_id }}",
+                    "rightValue": "",
+                    "operator": {
+                      "type": "string",
+                      "operation": "notEmpty"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "🚫 Cancelar"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "typeValidation": "strict"
+                },
+                "conditions": [
+                  {
+                    "id": "cond-create-001",
+                    "leftValue": "={{ $('Upsert Reserva').item.json.estado }}",
+                    "rightValue": "Commit",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  },
+                  {
+                    "id": "cond-create-002",
+                    "leftValue": "={{ $('Upsert Reserva').item.json.ghl_appointment_id }}",
+                    "rightValue": "",
+                    "operator": {
+                      "type": "string",
+                      "operation": "empty"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "✅ Crear"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "typeValidation": "strict"
+                },
+                "conditions": [
+                  {
+                    "id": "cond-update-001",
+                    "leftValue": "={{ $('Upsert Reserva').item.json.estado }}",
+                    "rightValue": "Commit",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  },
+                  {
+                    "id": "cond-update-002",
+                    "leftValue": "={{ $('Upsert Reserva').item.json.ghl_appointment_id }}",
+                    "rightValue": "",
+                    "operator": {
+                      "type": "string",
+                      "operation": "notEmpty"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "🔄 Actualizar"
+            }
+          ]
+        },
+        "options": {
+          "fallbackOutput": "extra",
+          "renameFallbackOutput": "⚠️ Sin Acción"
+        }
+      },
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.4,
+      "position": [
+        -224,
+        208
+      ],
+      "id": "e0a69395-c811-4558-844c-e27f94239bfd",
+      "name": "Switch Decisor"
+    },
+    {
+      "parameters": {
+        "method": "DELETE",
+        "url": "=https://services.leadconnectorhq.com/calendars/events/{{ $('Upsert Reserva').item.json.ghl_appointment_id }}",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "highLevelOAuth2Api",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Version",
+              "value": "2021-04-15"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        96,
+        -48
+      ],
+      "id": "72d6120c-8843-4215-a002-592612eb57af",
+      "name": "🚫 Borrar Appointment (Cancel)",
+      "credentials": {
+        "highLevelOAuth2Api": {
+          "id": "jS1L6ANVC3VxtcC6",
+          "name": "HighLevel account 2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE reservas_orbe SET ghl_appointment_id = NULL WHERE id_reserva_principal = $1;",
+        "options": {
+          "queryReplacement": "={{ $('Upsert Reserva').item.json.id_reserva_principal }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        320,
+        -48
+      ],
+      "id": "1260a054-7008-49a2-81bf-2eaf8e6f7ec3",
+      "name": "Limpiar ID Cita en BD",
+      "credentials": {
+        "postgres": {
+          "id": "pGtF6jU4wFmQ5Uh3",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://services.leadconnectorhq.com/hooks/M649NrxtUHpNCNxTC5U1/webhook-trigger/PCvrU9a2BgSa1YOkbPdK",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"email\": \"{{ $('Upsert Reserva').item.json.email }}\",\n  \"nombre\": \"{{ $('Upsert Reserva').item.json.nombre }}\",\n  \"apellido\": \"{{ $('Upsert Reserva').item.json.apellido }}\",\n  \"estado\": \"Cancelado\",\n  \"id_reserva\": \"{{ $('Upsert Reserva').item.json.id_reserva_principal }}\"\n}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        544,
+        -48
+      ],
+      "id": "7d792942-dfae-4b2f-9457-17e79b1c014d",
+      "name": "GHL Marcar Cancelado"
+    },
+    {
+      "parameters": {
+        "method": "DELETE",
+        "url": "=https://services.leadconnectorhq.com/calendars/events/{{ $('Upsert Reserva').item.json.ghl_appointment_id }}",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "highLevelOAuth2Api",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Version",
+              "value": "2021-04-15"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        96,
+        352
+      ],
+      "id": "22f0db01-16a3-41d6-a88b-fe986532d89e",
+      "name": "🔄 Borrar Appointment (Update)",
+      "credentials": {
+        "highLevelOAuth2Api": {
+          "id": "jS1L6ANVC3VxtcC6",
+          "name": "HighLevel account 2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE reservas_orbe SET ghl_appointment_id = $1 WHERE id_reserva_principal = $2;",
+        "options": {
+          "queryReplacement": "={{ $json.id || $json.appointmentId }},{{ $('Upsert Reserva').item.json.id_reserva_principal }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        544,
+        160
+      ],
+      "id": "4a00664e-1795-4d5c-badc-9336d8ad1217",
+      "name": "Guardar ID Appointment",
+      "credentials": {
+        "postgres": {
+          "id": "pGtF6jU4wFmQ5Uh3",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO logs_workflow_warnings (workflow, mensaje, contexto, created_at)\nVALUES ('flujo_1_orbe', $1, $2::jsonb, NOW());",
+        "options": {
+          "queryReplacement": "=Estado/appointment_id no matchea ningun caso del Switch,{{ JSON.stringify({ estado: $('Upsert Reserva').item.json.estado, ghl_appointment_id: $('Upsert Reserva').item.json.ghl_appointment_id, id_reserva: $('Upsert Reserva').item.json.id_reserva_principal }) }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        96,
+        544
+      ],
+      "id": "693e1e62-b41b-49e0-b571-3d7d9f2b9c07",
+      "name": "⚠️ Log Warning Sin Acción",
+      "credentials": {
+        "postgres": {
+          "id": "pGtF6jU4wFmQ5Uh3",
+          "name": "Postgres account"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://services.leadconnectorhq.com/contacts/{{ $('GHL Obtener Contacto').item.json.id }}/tags",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "highLevelOAuth2Api",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Version",
+              "value": "2021-07-28"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"tags\": [\"Confirmada ✅\"]\n}",
+        "options": {}
+      },
+      "id": "5bf1493b-310e-4a4b-a59f-d9ae26eaad7d",
+      "name": "🏷️ Tag Confirmada",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        752,
+        160
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000,
+      "credentials": {
+        "highLevelOAuth2Api": {
+          "id": "jS1L6ANVC3VxtcC6",
+          "name": "HighLevel account 2"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "resource": "calendar",
+        "calendarId": "viqiwKhTn4fwtPmOGjfz",
+        "locationId": "={{ $('GHL Obtener Contacto').item.json.locationId }}",
+        "contactId": "={{ $('GHL Obtener Contacto').item.json.id }}",
+        "startTime": "={{ $('Upsert Reserva').item.json.check_in }}",
+        "additionalFields": {
+          "endTime": "={{ $('Upsert Reserva').item.json.check_out }}",
+          "title": "=Reserva {{ $('Upsert Reserva').item.json.id_reserva_principal }} - {{ $('Upsert Reserva').item.json.nombre }} {{ $('Upsert Reserva').item.json.apellido }}"
+        },
+        "requestOptions": {}
+      },
+      "id": "a99fe45a-1da7-473b-8351-1091c967141c",
+      "name": "✅ Crear Appointment",
+      "type": "n8n-nodes-base.highLevel",
+      "typeVersion": 2,
+      "position": [
+        96,
+        144
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000,
+      "credentials": {
+        "highLevelOAuth2Api": {
+          "id": "jS1L6ANVC3VxtcC6",
+          "name": "HighLevel account 2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "resource": "calendar",
+        "calendarId": "viqiwKhTn4fwtPmOGjfz",
+        "locationId": "={{ $('GHL Obtener Contacto').item.json.locationId }}",
+        "contactId": "={{ $('GHL Obtener Contacto').item.json.id }}",
+        "startTime": "={{ $('Upsert Reserva').item.json.check_in }}",
+        "additionalFields": {
+          "endTime": "={{ $('Upsert Reserva').item.json.check_out }}",
+          "title": "=Reserva {{ $('Upsert Reserva').item.json.id_reserva_principal }} - {{ $('Upsert Reserva').item.json.nombre }} {{ $('Upsert Reserva').item.json.apellido }}"
+        },
+        "requestOptions": {}
+      },
+      "id": "1aaa59e6-f682-4a09-a996-a7c920e2ae32",
+      "name": "🔄 Crear Appointment (Update)",
+      "type": "n8n-nodes-base.highLevel",
+      "typeVersion": 2,
+      "position": [
+        304,
+        352
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000,
+      "credentials": {
+        "highLevelOAuth2Api": {
+          "id": "jS1L6ANVC3VxtcC6",
+          "name": "HighLevel account 2"
+        }
+      }
+    }
+  ],
+  "pinData": {
+    "Webhook Orbe": [
+      {
+        "json": {
+          "headers": {
+            "host": "n8n-n8n.vqrvd4.easypanel.host",
+            "user-agent": "axios/1.13.5",
+            "content-length": "1323",
+            "accept": "application/json,text/html,application/xhtml+xml,application/xml,text/*;q=0.9, image/*;q=0.8, */*;q=0.7",
+            "accept-encoding": "gzip, compress, deflate, br",
+            "content-type": "application/json",
+            "x-forwarded-for": "172.18.0.1",
+            "x-forwarded-host": "n8n-n8n.vqrvd4.easypanel.host",
+            "x-forwarded-port": "443",
+            "x-forwarded-proto": "https",
+            "x-forwarded-server": "053c33b9670f",
+            "x-real-ip": "172.18.0.1"
+          },
+          "params": {},
+          "query": {},
+          "body": {
+            "schema": "orbe.hotel.reservation.notification.v1",
+            "eventId": "IMPORT-HERXCNQ",
+            "eventType": "hotelReservation.notification",
+            "timeStamp": "2026-05-05T22:43:58Z",
+            "data": {
+              "target": "Production",
+              "version": "2.001",
+              "pos": {
+                "source": [
+                  {
+                    "agentSine": "Bralto Bulk Import",
+                    "property": "Natural Lodge Cano Negro",
+                    "propertySourceId": "458",
+                    "requestorId": {
+                      "type": "13",
+                      "id": "ORBE-CHN"
+                    }
+                  }
+                ]
+              },
+              "hotelReservations": [
+                {
+                  "createDateTime": "2027-01-07T12:00:00Z",
+                  "resStatus": "Commit",
+                  "uniqueId": [
+                    {
+                      "type": "14",
+                      "id": "HERXCNQ"
+                    },
+                    {
+                      "type": "21",
+                      "id": "8000017"
+                    }
+                  ],
+                  "pos": {
+                    "source": [
+                      {
+                        "requestorId": {
+                          "type": "13",
+                          "id": "ORBE-IBE"
+                        },
+                        "bookingChannel": {
+                          "type": 1
+                        }
+                      }
+                    ]
+                  },
+                  "roomStays": {
+                    "roomStay": [
+                      {
+                        "timeSpan": {
+                          "start": "2027-01-07",
+                          "end": "2027-01-10"
+                        },
+                        "guestCounts": {
+                          "guestCount": [
+                            {
+                              "ageQualifyingCode": "10",
+                              "count": 2
+                            },
+                            {
+                              "ageQualifyingCode": "8",
+                              "count": 0
+                            }
+                          ]
+                        },
+                        "roomTypes": {
+                          "roomType": [
+                            {
+                              "roomTypeCode": "STAN",
+                              "numberOfUnits": 1
+                            }
+                          ]
+                        },
+                        "roomRates": {
+                          "roomRate": [
+                            {
+                              "roomTypeCode": "STAN",
+                              "rates": {
+                                "rate": [
+                                  {
+                                    "effectiveDate": "2027-01-07",
+                                    "expireDate": "2027-01-10",
+                                    "base": {
+                                      "amountAfterTax": 557.18,
+                                      "currencyCode": "USD"
+                                    }
+                                  }
+                                ]
+                              }
+                            }
+                          ]
+                        },
+                        "total": {
+                          "amountAfterTax": 629.6,
+                          "currencyCode": "USD"
+                        }
+                      }
+                    ]
+                  },
+                  "resGuests": {
+                    "resGuest": [
+                      {
+                        "profiles": {
+                          "profileInfo": [
+                            {
+                              "profile": {
+                                "customer": {
+                                  "personName": {
+                                    "givenName": "Jonnie",
+                                    "surname": "Gonzalez"
+                                  },
+                                  "telephone": [],
+                                  "email": [
+                                    {
+                                      "emailAddress": "chris.cocobayestates@gmail.com"
+                                    }
+                                  ]
+                                }
+                              }
+                            }
+                          ]
+                        }
+                      }
+                    ]
+                  }
+                }
+              ]
+            }
+          },
+          "webhookUrl": "https://n8n-n8n.vqrvd4.easypanel.host/webhook/89284a6f-dfd8-4590-82de-b078b018a66f",
+          "executionMode": "production"
+        },
+        "pairedItem": {
+          "item": 0
+        }
+      }
+    ]
+  },
+  "connections": {
+    "Webhook Orbe": {
+      "main": [
+        [
+          {
+            "node": "Parsear Payload Orbe",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parsear Payload Orbe": {
+      "main": [
+        [
+          {
+            "node": "Check Duplicado",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Duplicado": {
+      "main": [
+        [
+          {
+            "node": "IF No Es Duplicado",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "IF No Es Duplicado": {
+      "main": [
+        [
+          {
+            "node": "Insert Historial",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Insert Historial": {
+      "main": [
+        [
+          {
+            "node": "Upsert Reserva",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Upsert Reserva": {
+      "main": [
+        [
+          {
+            "node": "GHL Upsert Contacto",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "GHL Upsert Contacto": {
+      "main": [
+        [
+          {
+            "node": "Esperar Sync GHL",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Esperar Sync GHL": {
+      "main": [
+        [
+          {
+            "node": "GHL Obtener Contacto",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "GHL Obtener Contacto": {
+      "main": [
+        [
+          {
+            "node": "Switch Decisor",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Switch Decisor": {
+      "main": [
+        [
+          {
+            "node": "🚫 Borrar Appointment (Cancel)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "✅ Crear Appointment",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "🔄 Borrar Appointment (Update)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "⚠️ Log Warning Sin Acción",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "🚫 Borrar Appointment (Cancel)": {
+      "main": [
+        [
+          {
+            "node": "Limpiar ID Cita en BD",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Limpiar ID Cita en BD": {
+      "main": [
+        [
+          {
+            "node": "GHL Marcar Cancelado",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "🔄 Borrar Appointment (Update)": {
+      "main": [
+        [
+          {
+            "node": "🔄 Crear Appointment (Update)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Guardar ID Appointment": {
+      "main": [
+        [
+          {
+            "node": "🏷️ Tag Confirmada",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "✅ Crear Appointment": {
+      "main": [
+        [
+          {
+            "node": "Guardar ID Appointment",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "🔄 Crear Appointment (Update)": {
+      "main": [
+        [
+          {
+            "node": "Guardar ID Appointment",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "availableInMCP": false
+  },
+  "versionId": "a59fa46a-0faf-4746-9ffb-a952955290b3",
+  "meta": {
+    "instanceId": "0880d4cac3d95e12259ca3ab113d6fb7dc108441aea1b1feee62d4cf63633465"
+  },
+  "id": "OQCTdFfT6EJjQS0K",
+  "tags": []
+}

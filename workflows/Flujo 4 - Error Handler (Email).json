@@ -1,0 +1,120 @@
+{
+  "name": "Flujo 4 - Error Handler (Email)",
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "11ccdcfb-a36a-4408-bb5b-ed649af4eb8c",
+      "name": "Error Trigger",
+      "type": "n8n-nodes-base.errorTrigger",
+      "typeVersion": 1,
+      "position": [
+        -448,
+        160
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Formatear el error para el email\nconst err = $input.first().json;\nconst execution = err.execution || {};\nconst workflow = err.workflow || {};\nconst lastNode = execution.lastNodeExecuted || 'desconocido';\nconst errorMsg = (execution.error?.message || err.message || 'Error sin mensaje').toString();\nconst errorStack = (execution.error?.stack || '').toString().substring(0, 1500);\nconst executionUrl = execution.url || `${$env.N8N_HOST || ''}/workflow/${workflow.id}/executions/${execution.id}`;\nconst now = new Date().toLocaleString('es-CR', { timeZone: 'America/Costa_Rica' });\n\n// Datos de entrada que rompió (si los hay)\nlet inputDataPreview = '';\ntry {\n  const inputData = execution.error?.node?.inputData || {};\n  inputDataPreview = JSON.stringify(inputData, null, 2).substring(0, 1000);\n} catch (e) {\n  inputDataPreview = '(no disponible)';\n}\n\nconst subject = `🚨 Error n8n: ${workflow.name || 'workflow'} → ${lastNode}`;\n\nconst htmlBody = `\n<div style=\"font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;\">\n  <div style=\"background: #d32f2f; color: white; padding: 16px; border-radius: 8px 8px 0 0;\">\n    <h2 style=\"margin: 0;\">🚨 Error en n8n</h2>\n  </div>\n  <div style=\"background: #f5f5f5; padding: 20px; border-radius: 0 0 8px 8px;\">\n    <table style=\"width: 100%; border-collapse: collapse;\">\n      <tr><td style=\"padding: 8px 0; font-weight: bold;\">Workflow:</td><td>${workflow.name || 'N/A'}</td></tr>\n      <tr><td style=\"padding: 8px 0; font-weight: bold;\">Nodo que falló:</td><td><code>${lastNode}</code></td></tr>\n      <tr><td style=\"padding: 8px 0; font-weight: bold;\">Timestamp:</td><td>${now}</td></tr>\n      <tr><td style=\"padding: 8px 0; font-weight: bold;\">Execution ID:</td><td>${execution.id || 'N/A'}</td></tr>\n    </table>\n    <h3 style=\"color: #d32f2f; margin-top: 20px;\">Mensaje de Error</h3>\n    <pre style=\"background: white; padding: 12px; border-radius: 4px; border-left: 4px solid #d32f2f; white-space: pre-wrap; font-size: 12px;\">${errorMsg}</pre>\n    ${errorStack ? `<h3 style=\"color: #666; margin-top: 16px;\">Stack Trace</h3><pre style=\"background: white; padding: 12px; border-radius: 4px; font-size: 11px; white-space: pre-wrap;\">${errorStack}</pre>` : ''}\n    <h3 style=\"color: #666; margin-top: 16px;\">Input Data (preview)</h3>\n    <pre style=\"background: white; padding: 12px; border-radius: 4px; font-size: 11px; white-space: pre-wrap;\">${inputDataPreview}</pre>\n    <p style=\"margin-top: 24px;\"><a href=\"${executionUrl}\" style=\"background: #1976d2; color: white; padding: 10px 20px; text-decoration: none; border-radius: 4px;\">Ver Ejecución Completa</a></p>\n  </div>\n  <p style=\"text-align: center; color: #999; font-size: 11px; margin-top: 16px;\">Notificación automática del Error Handler de Bralto</p>\n</div>\n`;\n\nreturn [{ json: {\n  subject,\n  htmlBody,\n  workflowName: workflow.name || '',\n  workflowId: workflow.id || '',\n  executionId: execution.id || '',\n  lastNode,\n  errorMsg,\n  timestamp: now\n} }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -224,
+        160
+      ],
+      "id": "0fd6fb5a-963d-4826-8079-e14a167655c6",
+      "name": "Formatear Error"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO logs_workflow_errors (workflow_name, workflow_id, execution_id, last_node, error_message, created_at)\nVALUES ($1, $2, $3, $4, $5, NOW());",
+        "options": {
+          "queryReplacement": "={{ $json.workflowName }},{{ $json.workflowId }},{{ $json.executionId }},{{ $json.lastNode }},{{ $json.errorMsg }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        0,
+        0
+      ],
+      "id": "ef3132db-fa17-45e1-91c0-0378b43cb271",
+      "name": "Log Error en BD",
+      "credentials": {
+        "postgres": {
+          "id": "pGtF6jU4wFmQ5Uh3",
+          "name": "Postgres account"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "fromEmail": "errors@send.bralto.io",
+        "toEmail": "ale@bralto.io",
+        "subject": "={{ $json.subject }}",
+        "html": "={{ $json.htmlBody }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [
+        0,
+        256
+      ],
+      "id": "f3963226-7f1d-4a12-a253-2c1d92511227",
+      "name": "Enviar Email Error",
+      "webhookId": "d3f4caa9-418e-47bb-9ee1-53fd164f51b7",
+      "credentials": {
+        "smtp": {
+          "id": "iBkePufbmZguuG1A",
+          "name": "SMTP account"
+        }
+      }
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Error Trigger": {
+      "main": [
+        [
+          {
+            "node": "Formatear Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Formatear Error": {
+      "main": [
+        [
+          {
+            "node": "Log Error en BD",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Enviar Email Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "availableInMCP": false
+  },
+  "versionId": "8813acee-b67e-44cf-aebb-4dff97dcc6b5",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "0880d4cac3d95e12259ca3ab113d6fb7dc108441aea1b1feee62d4cf63633465"
+  },
+  "id": "OWrGrYZ8BYpNR7gW",
+  "tags": []
+}

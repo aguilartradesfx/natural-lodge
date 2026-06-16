@@ -1,0 +1,447 @@
+{
+  "name": "Flujo 2 - Etiquetas Proactivas Diarias",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 9 * * *"
+            }
+          ]
+        }
+      },
+      "id": "b17d5f0f-bd1d-4083-b593-ae91ab9e1502",
+      "name": "Schedule 9AM CR",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        -976,
+        304
+      ],
+      "notes": "IMPORTANTE: el timezone del workflow debe estar configurado en 'America/Costa_Rica' (Settings → Workflow → Timezone)"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "-- Calcular etiqueta correcta para cada reserva activa\n-- Usa timezone Costa Rica para evitar el bug de UTC\nWITH today_cr AS (\n  SELECT (NOW() AT TIME ZONE 'America/Costa_Rica')::DATE AS hoy\n)\nSELECT \n    r.id_reserva_principal,\n    r.email,\n    r.telefono,\n    r.nombre,\n    r.apellido,\n    r.check_in,\n    r.check_out,\n    r.etiqueta_actual,\n    CASE \n        WHEN r.check_in::DATE = (SELECT hoy FROM today_cr) + INTERVAL '3 days' THEN '⏳ check-in: 3 días'\n        WHEN r.check_in::DATE = (SELECT hoy FROM today_cr) + INTERVAL '1 day' THEN '🔔 check-in: mañana'\n        WHEN r.check_in::DATE = (SELECT hoy FROM today_cr) THEN '✅ check-in: hoy'\n        WHEN r.check_out::DATE = (SELECT hoy FROM today_cr) - INTERVAL '1 day' THEN '⭐ check-out: realizado'\n    END AS etiqueta_nueva\nFROM reservas_orbe r, today_cr\nWHERE r.estado = 'Commit'\n  AND (\n    r.check_in::DATE = today_cr.hoy + INTERVAL '3 days' OR\n    r.check_in::DATE = today_cr.hoy + INTERVAL '1 day' OR\n    r.check_in::DATE = today_cr.hoy OR\n    r.check_out::DATE = today_cr.hoy - INTERVAL '1 day'\n  );",
+        "options": {}
+      },
+      "id": "94662595-56d9-46dc-b20e-f6cb93d8ef89",
+      "name": "Query Reservas Día",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        -768,
+        304
+      ],
+      "alwaysOutputData": true,
+      "credentials": {
+        "postgres": {
+          "id": "pGtF6jU4wFmQ5Uh3",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "cond-changed-001",
+              "leftValue": "={{ $json.etiqueta_nueva }}",
+              "rightValue": "={{ $json.etiqueta_actual }}",
+              "operator": {
+                "type": "string",
+                "operation": "notEquals"
+              }
+            },
+            {
+              "id": "cond-not-empty-001",
+              "leftValue": "={{ $json.etiqueta_nueva }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "notEmpty"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        -544,
+        304
+      ],
+      "id": "5c0eeb96-476e-479c-aac6-8f75a5cee0a2",
+      "name": "IF Etiqueta Cambió"
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "typeValidation": "strict"
+                },
+                "conditions": [
+                  {
+                    "id": "sw-001",
+                    "leftValue": "={{ $json.etiqueta_nueva }}",
+                    "rightValue": "⏳ check-in: 3 días",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "⏳ 3 días"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "typeValidation": "strict"
+                },
+                "conditions": [
+                  {
+                    "id": "sw-002",
+                    "leftValue": "={{ $json.etiqueta_nueva }}",
+                    "rightValue": "🔔 check-in: mañana",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "🔔 mañana"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "typeValidation": "strict"
+                },
+                "conditions": [
+                  {
+                    "id": "sw-003",
+                    "leftValue": "={{ $json.etiqueta_nueva }}",
+                    "rightValue": "✅ check-in: hoy",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "✅ hoy"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "typeValidation": "strict"
+                },
+                "conditions": [
+                  {
+                    "id": "sw-004",
+                    "leftValue": "={{ $json.etiqueta_nueva }}",
+                    "rightValue": "⭐ check-out: realizado",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "⭐ checkout"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.4,
+      "position": [
+        -320,
+        304
+      ],
+      "id": "50b4ccd7-100b-4978-ac9a-bd3846c27764",
+      "name": "Switch Etiqueta"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://services.leadconnectorhq.com/hooks/M649NrxtUHpNCNxTC5U1/webhook-trigger/amWLGJtUeNK3kWod6tHK",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"email\": \"{{ $json.email }}\",\n  \"id_reserva\": \"{{ $json.id_reserva_principal }}\",\n  \"etiqueta_nueva\": \"⏳ check-in: 3 días\",\n  \"etiqueta_vieja\": \"{{ $json.etiqueta_actual || '🏨 reserva activa' }}\"\n}",
+        "options": {}
+      },
+      "id": "338bf28c-9674-4ae3-9bee-6dfe586d00c9",
+      "name": "1. ⏳ check-in: 3 días",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        0,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://services.leadconnectorhq.com/hooks/M649NrxtUHpNCNxTC5U1/webhook-trigger/8a0ba778-2ea4-4d5c-9e6e-56ecbc3ef5d0",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"email\": \"{{ $json.email }}\",\n  \"id_reserva\": \"{{ $json.id_reserva_principal }}\",\n  \"etiqueta_nueva\": \"🔔 check-in: mañana\",\n  \"etiqueta_vieja\": \"{{ $json.etiqueta_actual || '⏳ check-in: 3 días' }}\"\n}",
+        "options": {}
+      },
+      "id": "a96b98e0-bcc0-4967-b30d-0b2563e041eb",
+      "name": "2. 🔔 check-in: mañana",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        0,
+        208
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://services.leadconnectorhq.com/hooks/M649NrxtUHpNCNxTC5U1/webhook-trigger/4D7nbb7PRXaw8lCVWLCi",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"email\": \"{{ $json.email }}\",\n  \"id_reserva\": \"{{ $json.id_reserva_principal }}\",\n  \"etiqueta_nueva\": \"✅ check-in: hoy\",\n  \"etiqueta_vieja\": \"{{ $json.etiqueta_actual || '🔔 check-in: mañana' }}\"\n}",
+        "options": {}
+      },
+      "id": "945a3c3b-4de8-493c-9cea-1bad4271ee4a",
+      "name": "3. ✅ check-in: hoy",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        0,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://services.leadconnectorhq.com/hooks/M649NrxtUHpNCNxTC5U1/webhook-trigger/6jl4JCkS9tqKwWCUhq6R",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"email\": \"{{ $json.email }}\",\n  \"id_reserva\": \"{{ $json.id_reserva_principal }}\",\n  \"etiqueta_nueva\": \"⭐ check-out: realizado\",\n  \"etiqueta_vieja\": \"{{ $json.etiqueta_actual || '✅ check-in: hoy' }}\"\n}",
+        "options": {}
+      },
+      "id": "e666ef39-be87-422d-913a-5a11572b82c3",
+      "name": "4. ⭐ check-out: realizado",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        0,
+        608
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE reservas_orbe \nSET etiqueta_actual = $1, etiqueta_actualizada_en = NOW() \nWHERE id_reserva_principal = $2;",
+        "options": {
+          "queryReplacement": "={{ $json.etiqueta_nueva || $json.body?.etiqueta_nueva }},{{ $('Switch Etiqueta').item.json.id_reserva_principal }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        224,
+        304
+      ],
+      "id": "4f095840-66dc-4553-9022-0a19db5561b3",
+      "name": "Update Etiqueta en BD",
+      "credentials": {
+        "postgres": {
+          "id": "pGtF6jU4wFmQ5Uh3",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO logs_etiquetas_proactivas (id_reserva_principal, email, etiqueta_anterior, etiqueta_nueva, fecha_envio)\nVALUES ($1, $2, $3, $4, NOW());",
+        "options": {
+          "queryReplacement": "={{ $('Switch Etiqueta').item.json.id_reserva_principal }},{{ $('Switch Etiqueta').item.json.email }},{{ $('Switch Etiqueta').item.json.etiqueta_actual || '' }},{{ $('Switch Etiqueta').item.json.etiqueta_nueva }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        448,
+        304
+      ],
+      "id": "c3e12dac-1d41-4b5b-997b-788fce2a312a",
+      "name": "Log Envío",
+      "credentials": {
+        "postgres": {
+          "id": "pGtF6jU4wFmQ5Uh3",
+          "name": "Postgres account"
+        }
+      },
+      "onError": "continueRegularOutput"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Schedule 9AM CR": {
+      "main": [
+        [
+          {
+            "node": "Query Reservas Día",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Query Reservas Día": {
+      "main": [
+        [
+          {
+            "node": "IF Etiqueta Cambió",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "IF Etiqueta Cambió": {
+      "main": [
+        [
+          {
+            "node": "Switch Etiqueta",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Switch Etiqueta": {
+      "main": [
+        [
+          {
+            "node": "1. ⏳ check-in: 3 días",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "2. 🔔 check-in: mañana",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "3. ✅ check-in: hoy",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "4. ⭐ check-out: realizado",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "1. ⏳ check-in: 3 días": {
+      "main": [
+        [
+          {
+            "node": "Update Etiqueta en BD",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "2. 🔔 check-in: mañana": {
+      "main": [
+        [
+          {
+            "node": "Update Etiqueta en BD",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "3. ✅ check-in: hoy": {
+      "main": [
+        [
+          {
+            "node": "Update Etiqueta en BD",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "4. ⭐ check-out: realizado": {
+      "main": [
+        [
+          {
+            "node": "Update Etiqueta en BD",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update Etiqueta en BD": {
+      "main": [
+        [
+          {
+            "node": "Log Envío",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "availableInMCP": false
+  },
+  "versionId": "bea05fa4-3c66-4146-83aa-8e9ff255785d",
+  "meta": {
+    "instanceId": "0880d4cac3d95e12259ca3ab113d6fb7dc108441aea1b1feee62d4cf63633465"
+  },
+  "id": "Xa5EGEn0Oxgl5IwB",
+  "tags": []
+}

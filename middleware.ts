@@ -1,7 +1,15 @@
 import { createServerClient } from '@supabase/ssr';
 import { NextResponse, type NextRequest } from 'next/server';
 
+// Rutas públicas (webhooks/cron) que NO usan sesión Supabase: tienen su
+// propia auth (secret/token). El middleware no debe redirigirlas a /login.
+const PUBLIC_API_PREFIXES = ['/api/webhooks', '/api/chatbot', '/api/cron'];
+
 export async function middleware(request: NextRequest) {
+  if (PUBLIC_API_PREFIXES.some((p) => request.nextUrl.pathname.startsWith(p))) {
+    return NextResponse.next({ request });
+  }
+
   let response = NextResponse.next({ request });
 
   const supabase = createServerClient(

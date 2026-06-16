@@ -1,0 +1,1607 @@
+{
+  "name": "NLCN Chatbot v2 (Supabase-driven prompts + toggle)",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "NLCN-Message",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        -5312,
+        928
+      ],
+      "id": "6e8ab2c9-b8a9-4d1e-b76a-aab3aca085b1",
+      "name": "Webhook Chatbot",
+      "webhookId": "d830ff28-0109-4526-bd3e-fc64fd7e3610"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT is_enabled FROM nlcn_bot_state WHERE id = 1 LIMIT 1;",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        -5088,
+        928
+      ],
+      "id": "28909e69-11c8-495e-a1e9-888306813734",
+      "name": "🔋 Get Bot State (Supabase)",
+      "alwaysOutputData": true,
+      "credentials": {
+        "postgres": {
+          "id": "pGtF6jU4wFmQ5Uh3",
+          "name": "Postgres account"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "const webhook = $('Webhook Chatbot').first().json;\nconst stateRows = $input.all();\n\nlet globalBotEnabled = true;\nif (stateRows && stateRows.length > 0 && stateRows[0].json) {\n  globalBotEnabled = stateRows[0].json.is_enabled !== false;\n}\n\nreturn [{ json: {\n  ...webhook,\n  globalBotEnabled\n}}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -4864,
+        928
+      ],
+      "id": "a328f3ed-5dfd-4970-991a-4a6a074d1a7e",
+      "name": "Merge State + Body"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "global-toggle-001",
+              "leftValue": "={{ $json.globalBotEnabled }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            },
+            {
+              "id": "contact-tag-001",
+              "leftValue": "={{ $json.body.tags || '' }}",
+              "rightValue": "bot desactivado",
+              "operator": {
+                "type": "string",
+                "operation": "notContains"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "looseTypeValidation": true,
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        -4640,
+        928
+      ],
+      "id": "282adfb8-583f-4016-93cf-3d3701310bb2",
+      "name": "🤖 IF Bot Activo"
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ silenciado: true, motivo: $json.globalBotEnabled === false ? 'Bot desactivado globalmente desde el panel' : 'Bot desactivado para este contacto' }) }}",
+        "options": {
+          "responseCode": 200
+        }
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        -4416,
+        1024
+      ],
+      "id": "24d0e019-0459-4ae0-b480-b32c5e1eb6fa",
+      "name": "🔇 Respond Silenciado"
+    },
+    {
+      "parameters": {
+        "jsCode": "const input = $input.first().json;\nconst body = input.body || input;\n\nconst rawPhone = (body.celular || body.phone || body.contactPhone || body.from || '').toString();\nconst phone = rawPhone.replace(/[^0-9+]/g, '');\n\nconst contactId = (body.contact_id || body.contactId || '').toString().trim();\nconst email = (body.email || '').toString().trim().toLowerCase();\nconst conversationIdFromWebhook = (body.conversation_id || body.conversationId || '').toString().trim();\n\nconst locationId = (body.location && body.location.id) ? body.location.id : 'M649NrxtUHpNCNxTC5U1';\n\nif (!contactId) {\n  return [{ json: { isValid: false, errorCode: 400, errorMessage: 'Campo requerido faltante: contact_id' } }];\n}\n\nif (!phone) {\n  return [{ json: { isValid: false, errorCode: 400, errorMessage: 'Campo requerido faltante: phone' } }];\n}\n\nreturn [{ json: {\n  isValid: true,\n  phone,\n  email,\n  contactId,\n  conversationId: conversationIdFromWebhook,\n  locationId,\n  receivedAt: new Date().toISOString()\n} }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -4416,
+        832
+      ],
+      "id": "f05d21c3-bace-483f-ac8c-29f51f6c720a",
+      "name": "Validar y Normalizar"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 1
+          },
+          "conditions": [
+            {
+              "id": "valid-001",
+              "leftValue": "={{ $json.isValid }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        -4192,
+        832
+      ],
+      "id": "381bda9f-8c1c-4cf0-be17-b970fac219b3",
+      "name": "IF Input Válido"
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ error: true, code: $json.errorCode || 400, mensaje: $json.errorMessage || 'Solicitud inválida' }) }}",
+        "options": {
+          "responseCode": 400
+        }
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        -3968,
+        928
+      ],
+      "id": "7e7ed41c-3fb0-4b11-aca8-83876098bf87",
+      "name": "Respond Error"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT COUNT(*) AS msg_count\nFROM chatbot_logs\nWHERE phone = $1\n  AND created_at > NOW() - INTERVAL '60 seconds';",
+        "options": {
+          "queryReplacement": "={{ $json.phone }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        -3968,
+        736
+      ],
+      "id": "09779879-0055-4409-a3b9-f034a05fe257",
+      "name": "Rate Limit Check",
+      "credentials": {
+        "postgres": {
+          "id": "pGtF6jU4wFmQ5Uh3",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "7d8fb425-cfd1-4c50-b765-a92d77997f87",
+              "leftValue": "={{ $json.msg_count }}",
+              "rightValue": 10,
+              "operator": {
+                "type": "number",
+                "operation": "lt"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "looseTypeValidation": true,
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        -3744,
+        736
+      ],
+      "id": "25358e4e-5da6-486e-8c59-b76557775b59",
+      "name": "IF Rate Limit OK"
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ error: true, code: 429, mensaje: 'Demasiadas solicitudes. Por favor espera un momento.' }) }}",
+        "options": {
+          "responseCode": 429
+        }
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        -3520,
+        832
+      ],
+      "id": "5fd9344a-d4a2-4d8d-86bb-6dc2b886ae0b",
+      "name": "Respond Rate Limit"
+    },
+    {
+      "parameters": {
+        "url": "=https://services.leadconnectorhq.com/conversations/search?locationId={{ $('Validar y Normalizar').item.json.locationId }}&contactId={{ $('Validar y Normalizar').item.json.contactId }}&limit=1",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "Bearer pit-a82ddb31-6925-46de-ba84-27182042c7b1"
+            },
+            {
+              "name": "Version",
+              "value": "2021-04-15"
+            },
+            {
+              "name": "Accept",
+              "value": "application/json"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -3520,
+        640
+      ],
+      "id": "ea1a40e3-5f77-48ff-8c8b-77b64ecac023",
+      "name": "🔍 GHL Buscar Conversación",
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 1000
+    },
+    {
+      "parameters": {
+        "url": "=https://services.leadconnectorhq.com/conversations/{{ $json.conversations && $json.conversations[0] ? $json.conversations[0].id : '' }}/messages?limit=5",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "Bearer pit-a82ddb31-6925-46de-ba84-27182042c7b1"
+            },
+            {
+              "name": "Version",
+              "value": "2021-04-15"
+            },
+            {
+              "name": "Accept",
+              "value": "application/json"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -3296,
+        640
+      ],
+      "id": "89e52371-e306-4816-b1ea-588e521c977d",
+      "name": "📩 GHL Obtener Mensajes",
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 1000
+    },
+    {
+      "parameters": {
+        "jsCode": "const validated = $('Validar y Normalizar').first().json;\nconst ghlResponse = $input.first().json;\n\nlet messages = [];\nif (ghlResponse && ghlResponse.messages) {\n  if (Array.isArray(ghlResponse.messages)) {\n    messages = ghlResponse.messages;\n  } else if (Array.isArray(ghlResponse.messages.messages)) {\n    messages = ghlResponse.messages.messages;\n  }\n}\n\nfunction mapMessageTypeToChannel(msgType, numericType) {\n  const mt = (msgType || '').toString().toUpperCase();\n  const nt = Number(numericType);\n  if (mt === 'TYPE_WHATSAPP') return 'WhatsApp';\n  if (mt === 'TYPE_SMS') return 'SMS';\n  if (mt === 'TYPE_EMAIL') return 'Email';\n  if (mt === 'TYPE_FACEBOOK') return 'FB';\n  if (mt === 'TYPE_INSTAGRAM') return 'IG';\n  if (mt === 'TYPE_LIVE_CHAT') return 'Live_Chat';\n  if (mt === 'TYPE_CUSTOM_SMS') return 'SMS';\n  if (mt === 'TYPE_CUSTOM_EMAIL') return 'Email';\n  if (mt === 'TYPE_GMB') return 'GMB';\n  if (nt === 1) return 'SMS';\n  if (nt === 3) return 'Email';\n  if (nt === 11) return 'FB';\n  if (nt === 15) return 'GMB';\n  if (nt === 18) return 'IG';\n  if (nt === 19) return 'WhatsApp';\n  if (nt === 20) return 'SMS';\n  if (nt === 21) return 'Email';\n  if (nt === 29) return 'Live_Chat';\n  return 'WhatsApp';\n}\n\nif (messages.length === 0) {\n  return [{ json: { ...validated, procesable: false, errorMessage: 'No pude encontrar tu mensaje en el sistema. Por favor escribime de nuevo.', messageType: 'error', inboundChannel: 'WhatsApp' } }];\n}\n\nlet lastMsg = null;\nfor (const m of messages) {\n  if (m.direction === 'inbound') { lastMsg = m; break; }\n}\n\nif (!lastMsg) {\n  return [{ json: { ...validated, procesable: false, errorMessage: 'No encontré mensajes nuevos tuyos. Si querés escribir, por favor enviame tu consulta de nuevo.', messageType: 'error', inboundChannel: 'WhatsApp' } }];\n}\n\nconst inboundChannel = mapMessageTypeToChannel(lastMsg.messageType, lastMsg.type);\nconst body = (lastMsg.body || '').toString();\nconst attachments = Array.isArray(lastMsg.attachments) ? lastMsg.attachments : [];\n\nfunction detectAttachmentType(url) {\n  if (!url) return 'unknown';\n  const cleanUrl = url.toString().split('?')[0].toLowerCase();\n  const ext = cleanUrl.split('.').pop();\n  if (['jpg', 'jpeg', 'png', 'gif', 'webp', 'bmp', 'heic', 'heif'].includes(ext)) return 'image';\n  if (['mp3', 'wav', 'ogg', 'oga', 'm4a', 'opus', 'aac', 'flac', 'webm'].includes(ext)) return 'audio';\n  if (['mp4', 'mov', 'avi', 'mkv', '3gp'].includes(ext)) return 'video';\n  if (['pdf', 'docx', 'doc', 'txt', 'xlsx', 'xls'].includes(ext)) return 'document';\n  return 'unknown';\n}\n\nlet messageType = 'text';\nlet attachmentUrl = '';\n\nif (attachments.length > 0) {\n  const firstUrl = typeof attachments[0] === 'string' ? attachments[0] : (attachments[0].url || attachments[0].fileUrl || '');\n  attachmentUrl = firstUrl;\n  const detected = detectAttachmentType(firstUrl);\n  if (detected === 'image' || detected === 'audio') {\n    messageType = detected;\n  } else if (detected === 'video') {\n    messageType = 'unsupported_video';\n  } else if (detected === 'document') {\n    messageType = 'unsupported_document';\n  } else {\n    messageType = 'unsupported_other';\n  }\n}\n\nif (!body && !attachmentUrl) {\n  return [{ json: { ...validated, procesable: false, errorMessage: 'Tu mensaje llegó vacío. Por favor escribime de nuevo.', messageType: 'error', inboundChannel } }];\n}\nif (messageType === 'unsupported_video') {\n  return [{ json: { ...validated, procesable: false, errorMessage: 'Por el momento no puedo procesar videos. Si querés contarme con palabras o un audio de qué se trata, con gusto te ayudo.', messageType: 'error', inboundChannel } }];\n}\nif (messageType === 'unsupported_document') {\n  return [{ json: { ...validated, procesable: false, errorMessage: 'Por el momento no puedo procesar documentos PDF u otros archivos. Si querés contarme con palabras de qué se trata, con gusto te ayudo.', messageType: 'error', inboundChannel } }];\n}\nif (messageType === 'unsupported_other') {\n  return [{ json: { ...validated, procesable: false, errorMessage: 'Por el momento solo puedo procesar texto, imágenes y audios. Si querés contarme con palabras de qué se trata, con gusto te ayudo.', messageType: 'error', inboundChannel } }];\n}\nif (body.length > 2000) {\n  return [{ json: { ...validated, procesable: false, errorMessage: 'Tu mensaje es muy largo. Por favor enviame uno más corto (máximo 2000 caracteres).', messageType: 'error', inboundChannel } }];\n}\n\nconst cleanBody = body.replace(/[\\x00-\\x08\\x0B\\x0C\\x0E-\\x1F]/g, '').trim();\n\nreturn [{ json: { ...validated, procesable: true, message: cleanBody, messageType, attachmentUrl, conversationId: lastMsg.conversationId || validated.conversationId || '', ghlMessageId: lastMsg.id || '', inboundChannel } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -3072,
+        640
+      ],
+      "id": "aa3eb6fd-1688-49cd-b5ba-c6462154ee4b",
+      "name": "Procesar Último Mensaje"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 1
+          },
+          "conditions": [
+            {
+              "id": "proc-001",
+              "leftValue": "={{ $json.procesable }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        -2848,
+        640
+      ],
+      "id": "9f7282b3-216b-41a8-8ace-c5f8f85345e3",
+      "name": "IF Mensaje Procesable"
+    },
+    {
+      "parameters": {
+        "jsCode": "const procesado = $input.first().json;\nreturn [{ json: {\n  mensaje: procesado.errorMessage || 'No pude procesar tu mensaje. ¿Podés intentar de nuevo?',\n  phone: procesado.phone || '',\n  contactId: procesado.contactId || '',\n  conversationId: procesado.conversationId || '',\n  hasReservation: false,\n  messageIn: '',\n  transferToSales: false,\n  agenteUsado: 'sistema',\n  inboundChannel: procesado.inboundChannel || 'WhatsApp'\n} }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -208,
+        1344
+      ],
+      "id": "d8b399e0-9219-4ae6-a59d-880d57694a31",
+      "name": "Preparar Mensaje Error"
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "rule-image",
+                    "leftValue": "={{ $json.messageType }}",
+                    "rightValue": "image",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "imagen"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "rule-audio",
+                    "leftValue": "={{ $json.messageType }}",
+                    "rightValue": "audio",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "audio"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "rule-text",
+                    "leftValue": "={{ $json.messageType }}",
+                    "rightValue": "text",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "texto"
+            }
+          ]
+        },
+        "options": {
+          "fallbackOutput": "extra"
+        }
+      },
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.2,
+      "position": [
+        -2624,
+        400
+      ],
+      "id": "97c590f1-45b4-4bc1-8dca-08eca6158d7b",
+      "name": "Switch Tipo Mensaje"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.openai.com/v1/chat/completions",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "openAiApi",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"model\": \"gpt-4o-mini\",\n  \"messages\": [\n    {\n      \"role\": \"user\",\n      \"content\": [\n        {\n          \"type\": \"text\",\n          \"text\": \"Describí en español qué muestra esta imagen, en máximo 2-3 oraciones, para un agente de soporte de hotel. Incluí cualquier texto visible (números, nombres, fechas) si aplica. Sé directo, sin frases tipo \\\"esta imagen muestra\\\".\"\n        },\n        {\n          \"type\": \"image_url\",\n          \"image_url\": {\"url\": \"{{ $json.attachmentUrl }}\"}\n        }\n      ]\n    }\n  ],\n  \"max_tokens\": 250\n}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -2176,
+        240
+      ],
+      "id": "8fac7431-8ec9-4c8e-a62f-f69cbde693d3",
+      "name": "🖼️ Describir Imagen (Vision)",
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 1000,
+      "credentials": {
+        "openAiApi": {
+          "id": "jf9AR1x11w91mdSp",
+          "name": "OpenAi Final"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "const procesado = $('Procesar Último Mensaje').first().json;\nconst visionResponse = $input.first().json;\nlet descripcion = '';\ntry {\n  descripcion = (visionResponse.choices && visionResponse.choices[0] && visionResponse.choices[0].message)\n    ? (visionResponse.choices[0].message.content || '').trim()\n    : '';\n} catch (e) { descripcion = ''; }\nif (!descripcion) descripcion = 'No se pudo procesar la imagen';\nconst captionOriginal = procesado.message || '';\nlet newMessage;\nif (captionOriginal) {\n  newMessage = '[El usuario envió una imagen. Descripción]: ' + descripcion + '\\n\\nMensaje del usuario: ' + captionOriginal;\n} else {\n  newMessage = '[El usuario envió una imagen. Descripción]: ' + descripcion + '\\n\\n(El usuario no escribió texto adicional)';\n}\nreturn [{ json: { ...procesado, message: newMessage, messageType: 'text', procesadoComo: 'imagen' } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -1952,
+        240
+      ],
+      "id": "ad9f7d25-28fd-4c8f-9de2-ed03ba395b9f",
+      "name": "Reemplazar Mensaje Imagen"
+    },
+    {
+      "parameters": {
+        "url": "={{ $json.attachmentUrl }}",
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "file"
+            }
+          }
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -2400,
+        432
+      ],
+      "id": "a5731f83-34c5-4abd-9a7f-0e8a140a6819",
+      "name": "⬇️ Descargar Audio",
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 1000,
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.openai.com/v1/audio/transcriptions",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "openAiApi",
+        "sendBody": true,
+        "contentType": "multipart-form-data",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "model",
+              "value": "whisper-1"
+            },
+            {
+              "name": "language",
+              "value": "es"
+            },
+            {
+              "parameterType": "formBinaryData",
+              "name": "file",
+              "inputDataFieldName": "data"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -2176,
+        432
+      ],
+      "id": "5ffd700a-f362-470f-9450-b9ee96f00780",
+      "name": "🎤 Transcribir Audio (Whisper)",
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 1000,
+      "credentials": {
+        "openAiApi": {
+          "id": "jf9AR1x11w91mdSp",
+          "name": "OpenAi Final"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "const procesado = $('Procesar Último Mensaje').first().json;\nconst whisperResponse = $input.first().json;\nlet transcripcion = (whisperResponse && whisperResponse.text) ? whisperResponse.text.toString().trim() : '';\nif (!transcripcion) transcripcion = 'No se pudo transcribir el audio';\nconst newMessage = '[El usuario envió un audio. Transcripción]: ' + transcripcion;\nreturn [{ json: { ...procesado, message: newMessage, messageType: 'text', procesadoComo: 'audio' } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -1952,
+        432
+      ],
+      "id": "40936f40-5993-4515-ba10-ea033b3db174",
+      "name": "Reemplazar Mensaje Audio"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT \n    id_reserva_principal AS reservation_id, \n    nombre || ' ' || apellido AS guest_name, \n    nombre,\n    apellido,\n    check_in::text, \n    check_out::text, \n    tipo_habitacion AS room_type, \n    estado AS status,\n    nombre_hotel AS hotel_name\nFROM reservas_orbe\nWHERE estado = 'Commit'\n  AND check_out::DATE >= (NOW() AT TIME ZONE 'America/Costa_Rica')::DATE\n  AND (\n    telefono = '{{ $('Validar y Normalizar').item.json.phone }}'\n    {{ $('Validar y Normalizar').item.json.email ? \"OR email = '\" + $('Validar y Normalizar').item.json.email + \"'\" : \"\" }}\n  )\nORDER BY check_in ASC\nLIMIT 1;",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        -1728,
+        480
+      ],
+      "id": "03789707-ff13-445d-9483-d30c47fab33c",
+      "name": "Buscar Reserva",
+      "alwaysOutputData": true,
+      "credentials": {
+        "postgres": {
+          "id": "pGtF6jU4wFmQ5Uh3",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const items = $input.all();\nlet dbResult = null;\nfor (const it of items) {\n  if (it && it.json && it.json.reservation_id) { dbResult = it.json; break; }\n}\n\nconst procesado = $('Procesar Último Mensaje').first().json;\nconst inboundChannel = procesado.inboundChannel || 'WhatsApp';\n\nlet finalMessage = procesado.message || '';\nlet agenteMode = 'text';\n\ntry {\n  const imgNode = $('Reemplazar Mensaje Imagen').first();\n  if (imgNode && imgNode.json && imgNode.json.message) { finalMessage = imgNode.json.message; agenteMode = 'image'; }\n} catch(e) {}\n\ntry {\n  const audNode = $('Reemplazar Mensaje Audio').first();\n  if (audNode && audNode.json && audNode.json.message) { finalMessage = audNode.json.message; agenteMode = 'audio'; }\n} catch(e) {}\n\nconst hasReservation = !!(dbResult && dbResult.reservation_id);\n\nlet guestContext = '';\nif (hasReservation) {\n  guestContext = 'HUESPED CON RESERVA ACTIVA:\\n- Nombre: ' + dbResult.guest_name + '\\n- Reserva ID: ' + dbResult.reservation_id + '\\n- Check-in: ' + dbResult.check_in + '\\n- Check-out: ' + dbResult.check_out + '\\n- Tipo de Habitación: ' + dbResult.room_type + '\\n- Estado: ' + dbResult.status + '\\n- Hotel: ' + dbResult.hotel_name;\n} else {\n  guestContext = 'SIN RESERVA ACTIVA. El cliente es un prospecto nuevo.';\n}\n\nconst safeMessage = finalMessage || '';\nconst msg = safeMessage.toLowerCase();\n\nconst escalationKeywords = [\n  'hablar con una persona', 'agente humano', 'persona real',\n  'quiero hablar con alguien', 'operador', 'recepción directa', 'recepcion directa',\n  'hablar con un humano', 'necesito ayuda real', 'no quiero bot',\n  'talk to a human', 'real person', 'speak to someone',\n  'quiero un agente', 'comunicarme con recepcion', 'comunicarme con recepción'\n];\nconst needsHumanEscalation = escalationKeywords.some(kw => msg.includes(kw));\n\nconst bigdayKeywords = [\n  'avistamiento', 'big day', 'bigday', 'big-day',\n  '#bigdaycanonegro', 'ebird', 'concurso',\n  'pajarero', 'birding', 'birdwatching',\n  'global big day', 'dinamica', 'dinámica',\n  'premio caño negro', 'premio cano negro',\n  'foto de ave', 'fotos de aves'\n];\nconst isBigDay = bigdayKeywords.some(kw => msg.includes(kw));\n\nreturn [{ json: {\n  phone: procesado.phone || '',\n  email: procesado.email || '',\n  message: safeMessage,\n  contactId: procesado.contactId || '',\n  conversationId: procesado.conversationId || '',\n  hasReservation,\n  guestContext,\n  reservationData: hasReservation ? dbResult : null,\n  needsHumanEscalation,\n  isBigDay,\n  agenteMode,\n  inboundChannel\n} }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -1504,
+        480
+      ],
+      "id": "6fb2a6d6-543f-4110-a2d4-893936259daa",
+      "name": "Construir Contexto"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT agent_key, system_prompt FROM nlcn_agent_prompts;",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        -1280,
+        480
+      ],
+      "id": "bc53d775-71da-4b5d-8330-f4b135e57918",
+      "name": "📜 Cargar Prompts (Supabase)",
+      "alwaysOutputData": true,
+      "credentials": {
+        "postgres": {
+          "id": "pGtF6jU4wFmQ5Uh3",
+          "name": "Postgres account"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "const ctx = $('Construir Contexto').first().json;\nconst promptRows = $input.all();\n\nconst prompts = {};\nfor (const row of promptRows) {\n  if (row && row.json && row.json.agent_key && row.json.system_prompt) {\n    prompts[row.json.agent_key] = row.json.system_prompt;\n  }\n}\n\n// Contexto dinámico (inyectado automáticamente — el equipo NO lo edita en el panel)\nconst dynamicContext = '═══════════════════════════════════════\\n' +\n  'CONTEXTO DEL HUÉSPED (auto-generado, no editable desde el panel):\\n' +\n  '═══════════════════════════════════════\\n' +\n  ctx.guestContext + '\\n\\n' +\n  'TELÉFONO: ' + ctx.phone + '\\n\\n' +\n  '═══════════════════════════════════════\\n\\n';\n\nconst fallbackSoporte = 'Eres un asistente del hotel. El prompt no está configurado en el panel. Pedile al equipo que lo configure.';\nconst fallbackBigday = 'Eres un asistente de la dinámica Big Day. El prompt no está configurado en el panel.';\nconst fallbackVentas = 'Eres Lorena, asesora de reservas. El prompt no está configurado en el panel.';\n\nreturn [{ json: {\n  ...ctx,\n  promptSoporte: dynamicContext + (prompts.soporte || fallbackSoporte),\n  promptBigday: dynamicContext + (prompts.bigday || fallbackBigday),\n  promptVentas: dynamicContext + (prompts.ventas || fallbackVentas)\n} }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -1056,
+        480
+      ],
+      "id": "4b0fe58f-c5a3-4821-adb9-f4277831fc26",
+      "name": "Merge Prompts + Context"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "escal-001",
+              "leftValue": "={{ $json.needsHumanEscalation }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        -832,
+        480
+      ],
+      "id": "17535ea5-a1da-41c5-a90c-47dee1ab41bd",
+      "name": "IF Escalamiento"
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ mensaje: 'Entendemos tu solicitud. En breve un miembro de nuestro equipo se comunicará contigo personalmente. Si necesitas atención inmediata, puedes contactar a nuestra recepción directamente. ¡Gracias por tu paciencia!', escalado: true }) }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        -608,
+        384
+      ],
+      "id": "c0fce105-6152-4bd2-93ba-6fbad9215325",
+      "name": "Respond Escalamiento"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "router-001",
+              "leftValue": "={{ $json.hasReservation }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        -448,
+        688
+      ],
+      "id": "5b1ca21a-c345-448d-9475-b6ead1e1dd61",
+      "name": "Router Determinístico"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "bigday-001",
+              "leftValue": "={{ $json.isBigDay }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        -224,
+        704
+      ],
+      "id": "4d01b080-967d-4023-9baf-81a9e72617f1",
+      "name": "IF BigDay"
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "={{ $json.message }}",
+        "options": {
+          "systemMessage": "={{ $json.promptSoporte }}"
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 1.7,
+      "position": [
+        0,
+        0
+      ],
+      "id": "44daca31-da73-480b-80e4-cc4473194070",
+      "name": "Agente Soporte",
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "sessionIdType": "customKey",
+        "sessionKey": "={{ $('Construir Contexto').item.json.phone }}_soporte",
+        "contextWindowLength": 30
+      },
+      "type": "@n8n/n8n-nodes-langchain.memoryPostgresChat",
+      "typeVersion": 1.3,
+      "position": [
+        128,
+        224
+      ],
+      "id": "4709aa5b-83f0-45c7-beb0-a350407c4bf0",
+      "name": "Memory Soporte",
+      "credentials": {
+        "postgres": {
+          "id": "pGtF6jU4wFmQ5Uh3",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "={{ $json.message }}",
+        "options": {
+          "systemMessage": "={{ $json.promptBigday }}"
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 1.7,
+      "position": [
+        0,
+        400
+      ],
+      "id": "3e368b33-12f9-4d9f-81f7-2214f1e78f06",
+      "name": "Agente BigDay",
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "sessionIdType": "customKey",
+        "sessionKey": "={{ $('Construir Contexto').item.json.phone }}_bigday",
+        "contextWindowLength": 20
+      },
+      "type": "@n8n/n8n-nodes-langchain.memoryPostgresChat",
+      "typeVersion": 1.3,
+      "position": [
+        128,
+        624
+      ],
+      "id": "55450445-772b-40ec-af5f-0b644eb3b420",
+      "name": "Memory BigDay",
+      "credentials": {
+        "postgres": {
+          "id": "pGtF6jU4wFmQ5Uh3",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "={{ $json.message }}",
+        "options": {
+          "systemMessage": "={{ $json.promptVentas }}"
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 1.7,
+      "position": [
+        0,
+        912
+      ],
+      "id": "b5d84746-2365-4bc4-af7d-7fdb4d5d1c9f",
+      "name": "Agente Ventas",
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "sessionIdType": "customKey",
+        "sessionKey": "={{ $('Construir Contexto').item.json.phone }}_ventas",
+        "contextWindowLength": 30
+      },
+      "type": "@n8n/n8n-nodes-langchain.memoryPostgresChat",
+      "typeVersion": 1.3,
+      "position": [
+        128,
+        1136
+      ],
+      "id": "ebd569c6-49ce-42ea-a420-1fe572ca98ea",
+      "name": "Memory Ventas",
+      "credentials": {
+        "postgres": {
+          "id": "pGtF6jU4wFmQ5Uh3",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const agentOutput = $input.first().json || {};\nconst ctx = $('Merge Prompts + Context').first().json || {};\n\nlet response = agentOutput.output || agentOutput.text || agentOutput.response || '';\nlet transferToSales = false;\n\nif (!response || agentOutput.error) {\n  response = '¡Hola! Disculpa, tengo dificultades para procesar tu consulta en este momento. ¿Podrías intentar nuevamente o comunicarte directamente con nuestra recepción?';\n}\n\nif (response.includes('[TRANSFERIR_A_VENTAS]')) {\n  transferToSales = true;\n  response = response.replace('[TRANSFERIR_A_VENTAS]', '').trim();\n}\n\nresponse = response\n  .replace(/#{1,6}\\s/g, '')\n  .replace(/\\*\\*(.*?)\\*\\*/g, '*$1*')\n  .replace(/\\[(.*?)\\]\\((.*?)\\)/g, '$1: $2')\n  .replace(/```[\\s\\S]*?```/g, '')\n  .replace(/`([^`]+)`/g, '$1')\n  .replace(/\\n{3,}/g, '\\n\\n')\n  .trim();\n\nif (response.length > 4000) {\n  response = response.substring(0, 3997) + '...';\n}\n\nlet agenteUsado = 'soporte';\nif (ctx.isBigDay) agenteUsado = 'bigday';\nelse if (!ctx.hasReservation) agenteUsado = 'ventas';\n\nreturn [{ json: {\n  mensaje: response,\n  phone: ctx.phone || '',\n  contactId: ctx.contactId || '',\n  conversationId: ctx.conversationId || '',\n  hasReservation: !!ctx.hasReservation,\n  messageIn: ctx.message || '',\n  transferToSales,\n  agenteUsado,\n  inboundChannel: ctx.inboundChannel || 'WhatsApp'\n} }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        384,
+        512
+      ],
+      "id": "ac99ab0a-a0e1-46e9-b9dd-9a5344ff63b8",
+      "name": "Sanitizar Respuesta"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://services.leadconnectorhq.com/conversations/messages",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Version",
+              "value": "2021-04-15"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "Authorization",
+              "value": "Bearer pit-a82ddb31-6925-46de-ba84-27182042c7b1"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"type\": \"{{ $json.inboundChannel }}\",\n  \"contactId\": \"{{ $json.contactId }}\",\n  \"message\": {{ JSON.stringify($json.mensaje) }}\n}",
+        "options": {}
+      },
+      "id": "370ccc5e-764f-4456-a19e-8c45e917967e",
+      "name": "📤 Enviar Mensaje GHL",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        912,
+        608
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000,
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ mensaje: $json.mensaje, agente: $json.agenteUsado, transferir_a_ventas: $json.transferToSales }) }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        -688,
+        688
+      ],
+      "id": "c199a8f1-4841-4743-88cb-1cf87f630324",
+      "name": "Respond Webhook"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO chatbot_logs (phone, contact_id, conversation_id, message_in, message_out, has_reservation, agente_usado, transferir_a_ventas, created_at)\nVALUES ($1, $2, $3, $4, $5, $6::boolean, $7, $8::boolean, NOW());",
+        "options": {
+          "queryReplacement": "={{ $json.phone }},{{ $json.contactId }},{{ $json.conversationId }},{{ $json.messageIn }},{{ $json.mensaje }},{{ $json.hasReservation }},{{ $json.agenteUsado }},{{ $json.transferToSales }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        1136,
+        608
+      ],
+      "id": "19c64441-e420-4d27-a180-bf3ef7a97a4b",
+      "name": "Guardar Log",
+      "credentials": {
+        "postgres": {
+          "id": "pGtF6jU4wFmQ5Uh3",
+          "name": "Postgres account"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "amount": 30
+      },
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [
+        704,
+        608
+      ],
+      "id": "cb948732-8051-40f3-a8d6-47c50f4953ab",
+      "name": "Wait",
+      "webhookId": "a72f6bbc-88a2-4e0b-9819-d550724816ea"
+    },
+    {
+      "parameters": {
+        "model": {
+          "__rl": true,
+          "value": "claude-sonnet-4-6",
+          "mode": "list",
+          "cachedResultName": "Claude Sonnet 4.6"
+        },
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatAnthropic",
+      "typeVersion": 1.3,
+      "position": [
+        -32,
+        192
+      ],
+      "id": "49db3908-27d4-4353-884f-033b6e5d6e6c",
+      "name": "Anthropic Chat Model",
+      "credentials": {
+        "anthropicApi": {
+          "id": "8YXf1eND2Zyi8WVX",
+          "name": "Anthropic account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "model": {
+          "__rl": true,
+          "value": "claude-sonnet-4-6",
+          "mode": "list",
+          "cachedResultName": "Claude Sonnet 4.6"
+        },
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatAnthropic",
+      "typeVersion": 1.3,
+      "position": [
+        -32,
+        608
+      ],
+      "id": "e0848d50-3a86-4b89-972a-2d21b8a452a9",
+      "name": "Anthropic Chat Model1",
+      "credentials": {
+        "anthropicApi": {
+          "id": "8YXf1eND2Zyi8WVX",
+          "name": "Anthropic account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "model": {
+          "__rl": true,
+          "value": "claude-sonnet-4-6",
+          "mode": "list",
+          "cachedResultName": "Claude Sonnet 4.6"
+        },
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatAnthropic",
+      "typeVersion": 1.3,
+      "position": [
+        -64,
+        1120
+      ],
+      "id": "8b59d0b1-7793-495d-a753-c52aabdc60f8",
+      "name": "Anthropic Chat Model2",
+      "credentials": {
+        "anthropicApi": {
+          "id": "8YXf1eND2Zyi8WVX",
+          "name": "Anthropic account"
+        }
+      }
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Webhook Chatbot": {
+      "main": [
+        [
+          {
+            "node": "🔋 Get Bot State (Supabase)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "🔋 Get Bot State (Supabase)": {
+      "main": [
+        [
+          {
+            "node": "Merge State + Body",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Merge State + Body": {
+      "main": [
+        [
+          {
+            "node": "🤖 IF Bot Activo",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "🤖 IF Bot Activo": {
+      "main": [
+        [
+          {
+            "node": "Validar y Normalizar",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "🔇 Respond Silenciado",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validar y Normalizar": {
+      "main": [
+        [
+          {
+            "node": "IF Input Válido",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "IF Input Válido": {
+      "main": [
+        [
+          {
+            "node": "Rate Limit Check",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Respond Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Rate Limit Check": {
+      "main": [
+        [
+          {
+            "node": "IF Rate Limit OK",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "IF Rate Limit OK": {
+      "main": [
+        [
+          {
+            "node": "🔍 GHL Buscar Conversación",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Respond Rate Limit",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "🔍 GHL Buscar Conversación": {
+      "main": [
+        [
+          {
+            "node": "📩 GHL Obtener Mensajes",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "📩 GHL Obtener Mensajes": {
+      "main": [
+        [
+          {
+            "node": "Procesar Último Mensaje",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Procesar Último Mensaje": {
+      "main": [
+        [
+          {
+            "node": "IF Mensaje Procesable",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "IF Mensaje Procesable": {
+      "main": [
+        [
+          {
+            "node": "Switch Tipo Mensaje",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Preparar Mensaje Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Preparar Mensaje Error": {
+      "main": [
+        [
+          {
+            "node": "Wait",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Switch Tipo Mensaje": {
+      "main": [
+        [
+          {
+            "node": "🖼️ Describir Imagen (Vision)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "⬇️ Descargar Audio",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Buscar Reserva",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Buscar Reserva",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "🖼️ Describir Imagen (Vision)": {
+      "main": [
+        [
+          {
+            "node": "Reemplazar Mensaje Imagen",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Reemplazar Mensaje Imagen": {
+      "main": [
+        [
+          {
+            "node": "Buscar Reserva",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "⬇️ Descargar Audio": {
+      "main": [
+        [
+          {
+            "node": "🎤 Transcribir Audio (Whisper)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "🎤 Transcribir Audio (Whisper)": {
+      "main": [
+        [
+          {
+            "node": "Reemplazar Mensaje Audio",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Reemplazar Mensaje Audio": {
+      "main": [
+        [
+          {
+            "node": "Buscar Reserva",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Buscar Reserva": {
+      "main": [
+        [
+          {
+            "node": "Construir Contexto",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Construir Contexto": {
+      "main": [
+        [
+          {
+            "node": "📜 Cargar Prompts (Supabase)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "📜 Cargar Prompts (Supabase)": {
+      "main": [
+        [
+          {
+            "node": "Merge Prompts + Context",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Merge Prompts + Context": {
+      "main": [
+        [
+          {
+            "node": "IF Escalamiento",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "IF Escalamiento": {
+      "main": [
+        [
+          {
+            "node": "Respond Escalamiento",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Respond Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Router Determinístico": {
+      "main": [
+        [
+          {
+            "node": "Agente Soporte",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "IF BigDay",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "IF BigDay": {
+      "main": [
+        [
+          {
+            "node": "Agente BigDay",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Agente Ventas",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Agente Soporte": {
+      "main": [
+        [
+          {
+            "node": "Sanitizar Respuesta",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Memory Soporte": {
+      "ai_memory": [
+        [
+          {
+            "node": "Agente Soporte",
+            "type": "ai_memory",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Agente BigDay": {
+      "main": [
+        [
+          {
+            "node": "Sanitizar Respuesta",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Memory BigDay": {
+      "ai_memory": [
+        [
+          {
+            "node": "Agente BigDay",
+            "type": "ai_memory",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Agente Ventas": {
+      "main": [
+        [
+          {
+            "node": "Sanitizar Respuesta",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Memory Ventas": {
+      "ai_memory": [
+        [
+          {
+            "node": "Agente Ventas",
+            "type": "ai_memory",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Sanitizar Respuesta": {
+      "main": [
+        [
+          {
+            "node": "Wait",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "📤 Enviar Mensaje GHL": {
+      "main": [
+        [
+          {
+            "node": "Guardar Log",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Respond Webhook": {
+      "main": [
+        [
+          {
+            "node": "Router Determinístico",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Wait": {
+      "main": [
+        [
+          {
+            "node": "📤 Enviar Mensaje GHL",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Anthropic Chat Model": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Agente Soporte",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Anthropic Chat Model1": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Agente BigDay",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Anthropic Chat Model2": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Agente Ventas",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "availableInMCP": false
+  },
+  "versionId": "210e2899-2e47-48f4-8746-4113dffa7934",
+  "meta": {
+    "instanceId": "0880d4cac3d95e12259ca3ab113d6fb7dc108441aea1b1feee62d4cf63633465"
+  },
+  "id": "qLV6d6vz8DR9Rmdj",
+  "tags": []
+}
