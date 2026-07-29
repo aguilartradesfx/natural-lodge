@@ -91,6 +91,7 @@ export type GhlContact = {
   locationId?: string;
   firstName?: string;
   lastName?: string;
+  companyName?: string;
   email?: string;
   phone?: string;
   tags?: string[];
@@ -288,4 +289,154 @@ export async function fireInboundWebhook(
   } catch (err) {
     console.error(`[ghl] inbound webhook ${triggerId} falló`, err);
   }
+}
+
+// ── Importador de contactos ──────────────────────────────────────
+
+export type GhlContactFields = {
+  firstName?: string;
+  lastName?: string;
+  name?: string;
+  companyName?: string;
+  email?: string;
+  phone?: string;
+  website?: string;
+  city?: string;
+  state?: string;
+  country?: string;
+  source?: string;
+  customFields?: Array<{ id: string; field_value: string }>;
+  locationId?: string;
+};
+
+/** Quita claves undefined/'' y arrays vacíos, para no pisar datos en GHL. */
+function cleanBody<T extends Record<string, unknown>>(obj: T): Record<string, unknown> {
+  const out: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(obj)) {
+    if (v === undefined || v === '') continue;
+    if (Array.isArray(v) && v.length === 0) continue;
+    out[k] = v;
+  }
+  return out;
+}
+
+export async function searchContacts(input: {
+  query: string;
+  locationId?: string;
+}): Promise<GhlContact[]> {
+  const data = await withRetry(() =>
+    ghlFetch<{ contacts?: GhlContact[] }>('/contacts/', {
+      version: '2021-07-28',
+      query: {
+        locationId: input.locationId || GHL_LOCATION_ID,
+        query: input.query,
+        limit: 20,
+      },
+    }),
+  );
+  return data.contacts ?? [];
+}
+
+export async function createContact(input: GhlContactFields): Promise<GhlContact> {
+  const { locationId, ...rest } = input;
+  const data = await withRetry(() =>
+    ghlFetch<{ contact: GhlContact }>('/contacts/', {
+      method: 'POST',
+      version: '2021-07-28',
+      body: cleanBody({ locationId: locationId || GHL_LOCATION_ID, ...rest }),
+    }),
+  );
+  return data.contact;
+}
+
+export async function updateContact(
+  contactId: string,
+  input: GhlContactFields,
+): Promise<GhlContact> {
+  const { locationId: _ignored, ...rest } = input;
+  const data = await withRetry(() =>
+    ghlFetch<{ contact: GhlContact }>(`/contacts/${contactId}`, {
+      method: 'PUT',
+      version: '2021-07-28',
+      body: cleanBody(rest),
+    }),
+  );
+  return data.contact;
+}
+
+export async function createNote(
+  contactId: string,
+  body: string,
+  _locationId: string = GHL_LOCATION_ID,
+): Promise<void> {
+  await withRetry(() =>
+    ghlFetch(`/contacts/${contactId}/notes`, {
+      method: 'POST',
+      version: '2021-07-28',
+      body: { body },
+    }),
+  );
+}
+
+export type GhlPipeline = {
+  id: string;
+  name: string;
+  stages: Array<{ id: string; name: string }>;
+};
+
+export async function getPipelines(locationId: string = GHL_LOCATION_ID): Promise<GhlPipeline[]> {
+  const data = await withRetry(() =>
+    ghlFetch<{ pipelines?: GhlPipeline[] }>('/opportunities/pipelines', {
+      version: '2021-07-28',
+      query: { locationId },
+    }),
+  );
+  return data.pipelines ?? [];
+}
+
+export type GhlCustomField = {
+  id: string;
+  name: string;
+  fieldKey?: string;
+  dataType?: string;
+};
+
+export async function getCustomFields(
+  locationId: string = GHL_LOCATION_ID,
+): Promise<GhlCustomField[]> {
+  const data = await withRetry(() =>
+    ghlFetch<{ customFields?: GhlCustomField[] }>(`/locations/${locationId}/customFields`, {
+      version: '2021-07-28',
+    }),
+  );
+  return data.customFields ?? [];
+}
+
+export async function createOpportunity(input: {
+  pipelineId: string;
+  stageId: string;
+  name: string;
+  contactId: string;
+  status?: string;
+  monetaryValue?: number;
+  locationId?: string;
+}): Promise<{ id: string }> {
+  const data = await withRetry(() =>
+    ghlFetch<{ opportunity?: { id: string }; id?: string }>('/opportunities/', {
+      method: 'POST',
+      version: '2021-07-28',
+      body: {
+        pipelineId: input.pipelineId,
+        locationId: input.locationId || GHL_LOCATION_ID,
+        name: input.name,
+        pipelineStageId: input.stageId,
+        status: input.status || 'open',
+        contactId: input.contactId,
+        monetaryValue: input.monetaryValue ?? 0,
+      },
+    }),
+  );
+  const id = data.opportunity?.id || data.id;
+  if (!id) throw new GhlError(200, JSON.stringify(data).slice(0, 300), '/opportunities/ (sin id)');
+  return { id };
 }
