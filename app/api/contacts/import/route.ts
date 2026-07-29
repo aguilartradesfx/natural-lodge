@@ -116,14 +116,15 @@ export async function POST(req: Request) {
 
       const existing = await findExisting(m);
       let contactId: string;
+      let outcome: 'created' | 'updated';
       if (existing) {
         const c = await updateContact(existing.id, fields);
         contactId = c.id;
-        report.updated++;
+        outcome = 'updated';
       } else {
         const c = await createContact(fields);
         contactId = c.id;
-        report.created++;
+        outcome = 'created';
       }
 
       if (m.tags.length) await addContactTags(contactId, m.tags);
@@ -131,6 +132,9 @@ export async function POST(req: Request) {
       if (report.pipelineResolved) {
         await createOpportunity({ pipelineId, stageId, name: m.opportunityName, contactId });
       }
+
+      if (outcome === 'created') report.created++;
+      else report.updated++;
     } catch (e) {
       report.failed.push({
         rowNumber: m.raw.rowNumber,
