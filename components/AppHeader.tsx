@@ -1,16 +1,18 @@
 'use client';
-import { LogOut, Sparkles, MessageSquare } from 'lucide-react';
+import { LogOut, Sparkles, MessageSquare, Upload } from 'lucide-react';
 
 export function AppHeader({
   email,
   onSignOut,
   onOpenAssistant,
   onOpenTester,
+  onOpenImport,
 }: {
   email: string | null;
   onSignOut: () => void;
   onOpenAssistant: () => void;
   onOpenTester: () => void;
+  onOpenImport: () => void;
 }) {
   const initial = (email || '?').slice(0, 1).toUpperCase();
 
@@ -45,6 +47,9 @@ export function AppHeader({
 
       {/* Actions */}
       <div className="flex items-center gap-2.5">
+        <HeaderPill onClick={onOpenImport} icon={<Upload size={14} />}>
+          <span className="hidden sm:inline">Importar contactos</span>
+        </HeaderPill>
         <HeaderPill onClick={onOpenAssistant} icon={<Sparkles size={14} />}>
           <span className="hidden sm:inline">Asistente IA</span>
         </HeaderPill>
