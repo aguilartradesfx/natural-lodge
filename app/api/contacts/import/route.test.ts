@@ -95,6 +95,9 @@ describe('POST /api/contacts/import', () => {
     expect(body.report.updated).toBe(1);
     expect(body.report.created).toBe(19);
     expect(body.report.created + body.report.updated + body.report.failed.length).toBe(20);
+    // La fila actualizada no debe generar una nota/oportunidad duplicada.
+    expect(ghl.createNote).toHaveBeenCalledTimes(19);
+    expect(ghl.createOpportunity).toHaveBeenCalledTimes(19);
   });
 
   it('dedup por teléfono: contacto existente se actualiza, el resto se crea', async () => {
@@ -117,6 +120,9 @@ describe('POST /api/contacts/import', () => {
     expect(body.report.updated).toBe(1);
     expect(body.report.created).toBe(19);
     expect(body.report.created + body.report.updated + body.report.failed.length).toBe(20);
+    // La fila actualizada no debe generar una nota/oportunidad duplicada.
+    expect(ghl.createNote).toHaveBeenCalledTimes(19);
+    expect(ghl.createOpportunity).toHaveBeenCalledTimes(19);
   });
 
   it('dedup por huella nombre+empresa: contacto existente se actualiza, el resto se crea', async () => {
@@ -139,5 +145,8 @@ describe('POST /api/contacts/import', () => {
     expect(body.report.updated).toBe(1);
     expect(body.report.created).toBe(19);
     expect(body.report.created + body.report.updated + body.report.failed.length).toBe(20);
+    // La fila actualizada no debe generar una nota/oportunidad duplicada.
+    expect(ghl.createNote).toHaveBeenCalledTimes(19);
+    expect(ghl.createOpportunity).toHaveBeenCalledTimes(19);
   });
 });

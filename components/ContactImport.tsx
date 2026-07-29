@@ -42,8 +42,18 @@ export function ContactImport() {
       method: 'POST',
       body: form,
     });
-    const body = await res.json();
-    if (!res.ok) throw new Error(body.error || 'Error inesperado');
+    const text = await res.text();
+    let body;
+    try {
+      body = text ? JSON.parse(text) : {};
+    } catch {
+      body = {};
+    }
+    if (!res.ok) {
+      throw new Error(
+        body.error || (res.status === 401 ? 'Tu sesión expiró. Iniciá sesión de nuevo.' : 'Error ' + res.status),
+      );
+    }
     return body;
   }
 
@@ -85,7 +95,15 @@ export function ContactImport() {
   return (
     <div className="text-[--color-cream] text-[14px]">
       {(phase === 'idle' || phase === 'previewing') && (
-        <label className="glass flex flex-col items-center justify-center gap-3 py-10 px-6 rounded-2xl cursor-pointer text-center">
+        <label
+          className="glass flex flex-col items-center justify-center gap-3 py-10 px-6 rounded-2xl cursor-pointer text-center"
+          onDragOver={(e) => e.preventDefault()}
+          onDrop={(e) => {
+            e.preventDefault();
+            const f = e.dataTransfer.files?.[0];
+            if (f) onFile(f);
+          }}
+        >
           {phase === 'previewing' ? (
             <Loader2 className="animate-spin" size={26} />
           ) : (

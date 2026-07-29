@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import type { RawProspect } from './prospect-types';
 import {
-  parseTags, deriveBatchTag, contactFingerprint, mapProspect,
+  parseTags, deriveBatchTag, contactFingerprint, mapProspect, synthesizeTags,
 } from './prospect-mapper';
 
 function makeRaw(over: Partial<RawProspect>): RawProspect {
@@ -67,5 +67,36 @@ describe('mapProspect', () => {
     expect(m.note).toContain('Prioridad: A');
     expect(m.note).toContain('Pitch: Nature extension');
     expect(m.note).toContain('Acción sugerida: Email Me');
+  });
+});
+
+describe('synthesizeTags', () => {
+  it('para una fila de Advisor deriva tags de agente, prioridad, alcance y país', () => {
+    const raw = makeRaw({ leadType: 'Advisor', priority: 'A', marketReach: 'High', country: 'Canada' });
+    expect(synthesizeTags(raw)).toEqual([
+      'B2B-Agent', 'Travel-Advisor', 'Priority-A', 'High-Market-Reach', 'Canada',
+    ]);
+  });
+  it('para una fila de Operator/Supplier deriva tags de operador', () => {
+    const raw = makeRaw({ leadType: 'Operator / Supplier Prospect' });
+    const tags = synthesizeTags(raw);
+    expect(tags).toContain('B2B-Operator');
+    expect(tags).toContain('Supplier-Prospect');
+  });
+});
+
+describe('mapProspect con tagsRaw vacío (simula fila de XLSX)', () => {
+  it('usa tags sintetizados', () => {
+    const m = mapProspect(makeRaw({ tagsRaw: '' }), 'Import-lote');
+    expect(m.tags).toContain('Priority-A');
+    expect(m.tags).toContain('Import-lote');
+  });
+});
+
+describe('mapProspect con tagsRaw no vacío', () => {
+  it('usa los tags parseados y NO sintetiza', () => {
+    const m = mapProspect(makeRaw({}), 'Import-lote');
+    expect(m.tags).toEqual(expect.arrayContaining(['B2B-Agent', 'Priority-A', 'Costa-Rica', 'Import-lote']));
+    expect(m.tags).not.toContain('Travel-Advisor');
   });
 });

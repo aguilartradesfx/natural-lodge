@@ -1,5 +1,5 @@
 import { requireUser } from '@/lib/api-auth';
-import { parseProspectFile, DEFAULT_PIPELINE, DEFAULT_STAGE } from '@/lib/prospect-parser';
+import { parseProspectFile, DEFAULT_PIPELINE, DEFAULT_STAGE, DEFAULT_SOURCE } from '@/lib/prospect-parser';
 import { validateProspects } from '@/lib/prospect-validator';
 import { mapProspect, deriveBatchTag, contactFingerprint, type MappedProspect } from '@/lib/prospect-mapper';
 import { summarizeBatch } from '@/lib/prospect-summary';
@@ -45,7 +45,9 @@ export async function POST(req: Request) {
   }
 
   const { validations, metrics } = validateProspects(prospects);
-  const batchTag = deriveBatchTag(prospects[0].source || file.name);
+  const batchSeed =
+    prospects[0].source && prospects[0].source !== DEFAULT_SOURCE ? prospects[0].source : file.name;
+  const batchTag = deriveBatchTag(batchSeed);
   const mapped = prospects.map((p) => mapProspect(p, batchTag));
 
   if (dryRun) {
@@ -128,9 +130,11 @@ export async function POST(req: Request) {
       }
 
       if (m.tags.length) await addContactTags(contactId, m.tags);
-      if (m.note) await createNote(contactId, m.note);
-      if (report.pipelineResolved) {
-        await createOpportunity({ pipelineId, stageId, name: m.opportunityName, contactId });
+      if (outcome === 'created') {
+        if (m.note) await createNote(contactId, m.note);
+        if (report.pipelineResolved) {
+          await createOpportunity({ pipelineId, stageId, name: m.opportunityName, contactId });
+        }
       }
 
       if (outcome === 'created') report.created++;
@@ -162,7 +166,7 @@ async function findExisting(m: MappedProspect): Promise<GhlContact | null> {
     return results.find((c) => (c.email || '').toLowerCase() === e) || null;
   }
   if (m.contact.phone) {
-    const norm = (s: string) => s.replace(/\D/g, '');
+    const norm = (s: string) => s.replace(/\D/g, '').slice(-10);
     const target = norm(m.contact.phone);
     return results.find((c) => norm(c.phone || '') !== '' && norm(c.phone || '') === target) || null;
   }

@@ -37,6 +37,25 @@ export function contactFingerprint(firstName: string, lastName: string, company:
   return slugify(`${firstName} ${lastName} ${company}`);
 }
 
+/** Deriva tags cuando la fuente no trae una columna de Tags (ej. hoja XLSX). */
+export function synthesizeTags(raw: RawProspect): string[] {
+  const tags: string[] = [];
+
+  if (/operator|supplier/i.test(raw.leadType)) {
+    tags.push('B2B-Operator', 'Supplier-Prospect');
+  } else if (raw.leadType) {
+    tags.push('B2B-Agent', 'Travel-Advisor');
+  }
+
+  if (raw.priority) tags.push(`Priority-${raw.priority.trim().toUpperCase()}`);
+
+  if (raw.marketReach.trim().toLowerCase() === 'high') tags.push('High-Market-Reach');
+
+  if (raw.country) tags.push(raw.country.trim());
+
+  return tags;
+}
+
 export function buildNote(raw: RawProspect): string {
   const lines: string[] = [];
   const head = [
@@ -74,7 +93,8 @@ const CUSTOM_FIELD_MAP: Array<{ name: string; get: (r: RawProspect) => string }>
 ];
 
 export function mapProspect(raw: RawProspect, batchTag: string): MappedProspect {
-  const tags = parseTags(raw.tagsRaw);
+  let tags = parseTags(raw.tagsRaw);
+  if (tags.length === 0) tags = synthesizeTags(raw);
   if (batchTag && !tags.includes(batchTag)) tags.push(batchTag);
 
   const hasContactChannel = Boolean(raw.email || raw.phone);
