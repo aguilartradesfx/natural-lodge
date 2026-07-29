@@ -24,10 +24,11 @@ describe('validateProspects', () => {
 
   it('cuenta totales y canales', () => {
     expect(metrics.total).toBe(4);
-    expect(metrics.withEmail).toBe(1);
+    expect(metrics.withEmail).toBe(2);
     expect(metrics.withPhone).toBe(1);
     expect(metrics.invalidEmails).toBe(1);
     expect(metrics.withoutChannel).toBe(1);
+    expect(metrics.withChannel).toBe(3);
   });
 
   it('marca correo inválido', () => {
@@ -36,5 +37,16 @@ describe('validateProspects', () => {
 
   it('marca fila sin canal de contacto', () => {
     expect(validations[2].warnings.join()).toContain('Sin correo ni teléfono');
+  });
+
+  it('correo inválido sin teléfono no se marca como sin canal de contacto', () => {
+    expect(validations[1].warnings.join()).toContain('inválido');
+    expect(validations[1].warnings.join()).not.toContain('Sin correo');
+  });
+
+  it('marca fila sin nombre ni empresa', () => {
+    const row = raw({ firstName: '', lastName: '', company: '', email: 'x@y.com' }, 5);
+    const { validations: v } = validateProspects([row]);
+    expect(v[0].warnings.join()).toContain('Sin nombre ni empresa');
   });
 });

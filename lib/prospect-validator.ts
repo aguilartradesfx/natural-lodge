@@ -29,11 +29,13 @@ export function validateProspects(rows: RawProspect[]): {
     const hasPhone = Boolean(r.phone);
     const emailValid = hasEmail && EMAIL_RE.test(r.email);
 
-    if (hasEmail && !emailValid) {
-      warnings.push('Correo con formato inválido');
-      invalidEmails++;
+    if (hasEmail) {
+      withEmail++;
+      if (!emailValid) {
+        warnings.push('Correo con formato inválido');
+        invalidEmails++;
+      }
     }
-    if (emailValid) withEmail++;
     if (hasPhone) withPhone++;
 
     if (!hasEmail && !hasPhone) {
