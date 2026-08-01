@@ -1,0 +1,11 @@
+# Archivos de trabajo que no forman parte de la aplicación.
+# Los de datos (CSV/XLSX de prospectos) traen nombres, correos y teléfonos:
+# no tienen por qué viajar al despliegue.
+
+*.csv
+*.xlsx
+natural-lodge-panel.html
+NLCN Chatbot v2 (Supabase-driven prompts + toggle).json
+workflows/
+docs/
+00_PROMPT_PARA_CLAUDE_CODE.md
