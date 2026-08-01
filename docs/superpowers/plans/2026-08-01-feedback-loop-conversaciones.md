@@ -24,6 +24,20 @@
 - **Errores de trabajo en segundo plano** se registran con `logWorkflowError` de [`lib/error-log.ts`](../../../lib/error-log.ts). Nunca lanza.
 - **Migraciones idempotentes:** `CREATE TABLE IF NOT EXISTS`, `CREATE INDEX IF NOT EXISTS`, `CREATE OR REPLACE FUNCTION`.
 - **Tests:** `vitest`, colocados junto al módulo (`lib/x.ts` → `lib/x.test.ts`). El `include` de [`vitest.config.ts`](../../../vitest.config.ts) es `['lib/**/*.test.ts', 'app/**/*.test.ts']`.
+- **Mocks: usá siempre `vi.hoisted`.** El factory de `vi.mock` se eleva por encima de las declaraciones del archivo, así que **no puede cerrar sobre un `const` normal** — falla con `Cannot access 'X' before initialization`. Los bloques de test de este plan usan la forma corta por legibilidad; al escribirlos, convertilos:
+
+  ```ts
+  // ✗ Rompe en tiempo de ejecución
+  const create = vi.fn();
+  vi.mock('@/lib/anthropic', () => ({ anthropic: { messages: { create } } }));
+
+  // ✓ Correcto
+  const { create } = vi.hoisted(() => ({ create: vi.fn() }));
+  vi.mock('@/lib/anthropic', () => ({ anthropic: { messages: { create } } }));
+  ```
+
+  Lo mismo aplica a cualquier objeto de estado mutable que use el doble de Supabase.
+- **Tipar los parámetros de los mocks** que después se inspeccionan: `vi.fn(async () => {})` deja `mock.calls[0][0]` sin tipo y `tsc` lo rechaza. Usá `vi.fn(async (_input: unknown) => {})` y casteá en la aserción.
 - **Sin librerías nuevas.** Todo se hace con lo que ya está en `package.json` (la única excepción autorizada es subir la versión de `@anthropic-ai/sdk`, en la Tarea 1).
 
 ---

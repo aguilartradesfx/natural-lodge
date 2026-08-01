@@ -196,6 +196,13 @@ Historial completo, restaurable.
 anterior. La migración crea la **versión 1** de cada agente con su `system_prompt` actual,
 así ningún agente queda sin punto de retorno desde el primer día.
 
+**Agentes creados después de la migración:** la semilla solo alcanza a los agentes que
+existían al aplicarla. Para el resto, la función SQL **archiva el prompt vivo como versión 1
+antes de crear la versión nueva**, dentro de la misma transacción. Sin eso, el primer cambio
+de un agente nuevo guardaría el texto ya modificado como v1 y sería irreversible — el defecto
+lo encontró la verificación de punta a punta y está corregido en la migración
+`20260801010000_baseline_version_al_primer_cambio.sql`.
+
 **Restaurar** = tomar el `system_prompt` de la versión X, escribirlo en `nlcn_agent_prompts`,
 y crear una **versión nueva** con ese contenido (`change_summary = "Restaurado desde vX"`).
 El historial nunca se reescribe ni se borra.
