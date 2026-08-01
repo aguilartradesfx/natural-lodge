@@ -19,6 +19,7 @@ import { transcribeAudio } from '@/lib/transcribe';
 import { findActiveReservation } from '@/lib/reservas';
 import { getHistory, appendTurns, sessionKey } from '@/lib/chat-memory';
 import { logWorkflowError } from '@/lib/error-log';
+import { CHATBOT_FALLBACK_MESSAGE } from '@/lib/review-constants';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -262,11 +263,7 @@ async function runAgent(input: {
   }
 
   if (!raw) {
-    return {
-      mensaje:
-        '¡Hola! Disculpa, tengo dificultades para procesar tu consulta en este momento. ¿Podrías intentar nuevamente o comunicarte directamente con nuestra recepción?',
-      transferToSales: false,
-    };
+    return { mensaje: CHATBOT_FALLBACK_MESSAGE, transferToSales: false };
   }
 
   const sanitized = sanitizeAgentResponse(raw);
