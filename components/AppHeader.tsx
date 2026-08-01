@@ -1,6 +1,6 @@
 'use client';
 import Link from 'next/link';
-import { LogOut, Sparkles, MessageSquare, Upload, ClipboardCheck } from 'lucide-react';
+import { LogOut, Sparkles, MessageSquare, Upload, ClipboardCheck, BookOpen } from 'lucide-react';
 
 export function AppHeader({
   email,
@@ -48,6 +48,15 @@ export function AppHeader({
 
       {/* Actions */}
       <div className="flex items-center gap-2.5">
+        <Link
+          href="/panel-guide"
+          className="glass-pill inline-flex items-center gap-2 px-4 py-[9px] rounded-full text-[--color-cream-dim] text-[12.5px] font-medium cursor-pointer transition-all duration-200 hover:text-[--color-cream] hover:-translate-y-[1px]"
+        >
+          <span className="opacity-85">
+            <BookOpen size={14} />
+          </span>
+          <span className="hidden sm:inline">Manual</span>
+        </Link>
         <Link
           href="/revision"
           className="glass-pill inline-flex items-center gap-2 px-4 py-[9px] rounded-full text-[--color-cream-dim] text-[12.5px] font-medium cursor-pointer transition-all duration-200 hover:text-[--color-cream] hover:-translate-y-[1px]"

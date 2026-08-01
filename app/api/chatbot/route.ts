@@ -17,6 +17,7 @@ import { processLastMessage, type ProcessedMessage } from '@/lib/chatbot-message
 import { describeImage } from '@/lib/vision';
 import { transcribeAudio } from '@/lib/transcribe';
 import { findActiveReservation } from '@/lib/reservas';
+import { getEventAgent } from '@/lib/event-agent';
 import { getHistory, appendTurns, sessionKey } from '@/lib/chat-memory';
 import { logWorkflowError } from '@/lib/error-log';
 import { CHATBOT_FALLBACK_MESSAGE } from '@/lib/review-constants';
@@ -168,10 +169,12 @@ async function processConversation(ctx: Ctx): Promise<void> {
     return;
   }
 
-  // Reserva activa + ruteo determinístico.
+  // Reserva activa + ruteo determinístico. El agente de evento se lee del
+  // panel: nombre, palabras y encendido son editables sin tocar código.
   const reservation = await findActiveReservation(ctx.phone, ctx.email);
   const hasReservation = !!reservation;
-  const decision = decideRoute({ message, hasReservation });
+  const eventAgent = await getEventAgent();
+  const decision = decideRoute({ message, hasReservation, eventAgent });
 
   if (decision.kind === 'escalation') {
     await deliver(ctx, {

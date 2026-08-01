@@ -1,7 +1,7 @@
 'use client';
 import { useEffect, useState } from 'react';
 import { createClient } from '@/lib/supabase/client';
-import { Check, Info, Loader2 } from 'lucide-react';
+import { Check, CalendarDays, Info, Loader2 } from 'lucide-react';
 
 export type Prompt = {
   agent_key: string;
@@ -10,7 +10,23 @@ export type Prompt = {
   system_prompt: string;
   updated_at: string;
   updated_by: string | null;
+  /** Solo el agente de evento se puede apagar desde el panel. */
+  is_enabled?: boolean;
+  /** Palabras del mensaje que activan a este agente. Vacío en soporte y ventas. */
+  keywords?: string[];
+  /** Marca al agente de evento: el único con nombre y palabras editables. */
+  is_event?: boolean;
 };
+
+/** "a, b , c" → ["a","b","c"], sin vacíos ni duplicados. */
+function parseKeywords(texto: string): string[] {
+  const vistas = new Set<string>();
+  for (const parte of texto.split(',')) {
+    const limpia = parte.trim().toLowerCase();
+    if (limpia) vistas.add(limpia);
+  }
+  return [...vistas];
+}
 
 const ROLE_LABEL: Record<string, string> = {
   soporte: 'Huéspedes',
@@ -37,33 +53,73 @@ export function AgentWorkspace({
   prompts: Prompt[];
   selectedKey: string;
   onSelect: (key: string) => void;
-  onSaved: (key: string, newPrompt: string, updatedAt: string) => void;
+  onSaved: (
+    key: string,
+    newPrompt: string,
+    updatedAt: string,
+    extra?: Partial<Prompt>,
+  ) => void;
   userEmail: string;
 }) {
   const current = prompts.find((p) => p.agent_key === selectedKey) || prompts[0];
+  const isEvent = current?.is_event === true;
+
   const [draft, setDraft] = useState(current?.system_prompt || '');
+  const [nombre, setNombre] = useState(current?.display_name || '');
+  const [palabras, setPalabras] = useState((current?.keywords ?? []).join(', '));
+  const [activo, setActivo] = useState(current?.is_enabled !== false);
   const [saving, setSaving] = useState(false);
   const [justSaved, setJustSaved] = useState(false);
   const supabase = createClient();
 
   useEffect(() => {
     setDraft(current?.system_prompt || '');
+    setNombre(current?.display_name || '');
+    setPalabras((current?.keywords ?? []).join(', '));
+    setActivo(current?.is_enabled !== false);
     setJustSaved(false);
-  }, [current?.agent_key, current?.updated_at, current?.system_prompt]);
+  }, [
+    current?.agent_key,
+    current?.updated_at,
+    current?.system_prompt,
+    current?.display_name,
+    current?.is_enabled,
+    current?.keywords,
+  ]);
 
-  const dirty = draft !== (current?.system_prompt || '');
+  const dirty =
+    draft !== (current?.system_prompt || '') ||
+    (isEvent &&
+      (nombre.trim() !== (current?.display_name || '') ||
+        palabras !== (current?.keywords ?? []).join(', ') ||
+        activo !== (current?.is_enabled !== false)));
 
   async function save() {
     if (!current) return;
     setSaving(true);
+
+    // Los campos del evento solo se envían para el agente de evento: soporte y
+    // ventas no deben poder quedar apagados ni con palabras de activación.
+    const cambios: Record<string, unknown> = { system_prompt: draft, updated_by: userEmail };
+    if (isEvent) {
+      cambios.display_name = nombre.trim() || current.display_name;
+      cambios.keywords = parseKeywords(palabras);
+      cambios.is_enabled = activo;
+    }
+
     const { data, error } = await supabase
       .from('nlcn_agent_prompts')
-      .update({ system_prompt: draft, updated_by: userEmail })
+      .update(cambios)
       .eq('agent_key', current.agent_key)
       .select()
       .single();
+
     if (!error && data) {
-      onSaved(current.agent_key, data.system_prompt, data.updated_at);
+      onSaved(current.agent_key, data.system_prompt, data.updated_at, {
+        display_name: data.display_name,
+        keywords: Array.isArray(data.keywords) ? data.keywords : [],
+        is_enabled: data.is_enabled,
+      });
       setJustSaved(true);
       setTimeout(() => setJustSaved(false), 2200);
     }
@@ -72,6 +128,9 @@ export function AgentWorkspace({
 
   function discard() {
     setDraft(current?.system_prompt || '');
+    setNombre(current?.display_name || '');
+    setPalabras((current?.keywords ?? []).join(', '));
+    setActivo(current?.is_enabled !== false);
   }
 
   if (!current) return null;
@@ -136,8 +195,23 @@ export function AgentWorkspace({
                 <div className="text-[16px] font-medium text-[--color-cream] tracking-tight truncate">
                   {p.display_name}
                 </div>
-                <div className="text-[10.5px] font-medium text-[--color-cream-mute] uppercase tracking-[0.14em] mt-px truncate">
-                  {ROLE_LABEL[p.agent_key] || p.agent_key}
+                <div className="text-[10.5px] font-medium uppercase tracking-[0.14em] mt-px truncate">
+                  {p.is_event ? (
+                    <span
+                      style={{
+                        color:
+                          p.is_enabled === false
+                            ? 'var(--color-cream-faint)'
+                            : 'var(--color-green-glow)',
+                      }}
+                    >
+                      Evento {p.is_enabled === false ? '· apagado' : '· activo'}
+                    </span>
+                  ) : (
+                    <span className="text-[--color-cream-mute]">
+                      {ROLE_LABEL[p.agent_key] || p.agent_key}
+                    </span>
+                  )}
                 </div>
               </div>
               {active && (
@@ -160,6 +234,91 @@ export function AgentWorkspace({
           <p className="text-[14.5px] font-normal text-[--color-cream-dim] leading-[1.55] max-w-[720px]">
             {current.description}
           </p>
+        )}
+
+        {/* Configuración del evento — solo para el agente de evento */}
+        {isEvent && (
+          <div className="glass-inset mt-6 p-[22px_24px]">
+            <div className="flex flex-wrap items-center justify-between gap-4">
+              <div className="flex items-center gap-3">
+                <CalendarDays size={16} style={{ color: 'var(--color-green-glow)' }} />
+                <div>
+                  <div className="text-[13.5px] font-medium text-[--color-cream]">
+                    Configuración del evento
+                  </div>
+                  <div className="text-[12px] text-[--color-cream-mute] mt-px">
+                    {activo
+                      ? 'El bot responde sobre este evento cuando lo mencionan.'
+                      : 'Apagado: el bot ignora el evento y atiende como ventas.'}
+                  </div>
+                </div>
+              </div>
+
+              {/* Interruptor del evento */}
+              <button
+                type="button"
+                role="switch"
+                aria-checked={activo}
+                aria-label={activo ? 'Apagar el evento' : 'Encender el evento'}
+                onClick={() => setActivo((v) => !v)}
+                className="relative w-[52px] h-[30px] rounded-full transition-colors duration-200 shrink-0 cursor-pointer"
+                style={{
+                  background: activo ? 'var(--color-green-ring)' : 'rgba(255,255,255,0.07)',
+                  boxShadow: activo
+                    ? '0 0 0 1px rgba(127,184,138,0.5), 0 0 16px -4px var(--color-green-ring)'
+                    : '0 0 0 1px rgba(255,255,255,0.06)',
+                }}
+              >
+                <span
+                  className="absolute top-[3px] w-[24px] h-[24px] rounded-full transition-all duration-200"
+                  style={{
+                    left: activo ? '25px' : '3px',
+                    background: activo
+                      ? 'var(--color-green-glow)'
+                      : 'var(--color-cream-faint)',
+                  }}
+                />
+              </button>
+            </div>
+
+            <div className="grid gap-4 mt-6 sm:grid-cols-2">
+              <label className="block">
+                <span className="block text-[11px] font-semibold text-[--color-cream-mute] uppercase tracking-[0.16em] mb-2">
+                  Nombre del evento
+                </span>
+                <input
+                  value={nombre}
+                  onChange={(e) => setNombre(e.target.value)}
+                  placeholder="Big Day Caño Negro"
+                  className="w-full glass-inset px-4 py-[11px] text-[13.5px] text-[--color-cream] outline-none focus:[box-shadow:0_0_0_1px_var(--color-green-ring)] transition-shadow"
+                />
+                <span className="block text-[11.5px] text-[--color-cream-faint] mt-2 leading-[1.5]">
+                  Es el nombre que ves en la pestaña de arriba.
+                </span>
+              </label>
+
+              <label className="block">
+                <span className="block text-[11px] font-semibold text-[--color-cream-mute] uppercase tracking-[0.16em] mb-2">
+                  Palabras que activan el evento
+                </span>
+                <input
+                  value={palabras}
+                  onChange={(e) => setPalabras(e.target.value)}
+                  placeholder="big day, avistamiento, ebird"
+                  className="w-full glass-inset px-4 py-[11px] text-[13.5px] text-[--color-cream] outline-none focus:[box-shadow:0_0_0_1px_var(--color-green-ring)] transition-shadow"
+                />
+                <span className="block text-[11.5px] text-[--color-cream-faint] mt-2 leading-[1.5]">
+                  Separadas por coma. Si el huésped escribe alguna, contesta este agente.
+                </span>
+              </label>
+            </div>
+
+            {isEvent && parseKeywords(palabras).length === 0 && (
+              <p className="mt-4 text-[12.5px] leading-[1.5] text-amber-300/90">
+                Sin palabras clave este agente nunca se va a activar, aunque esté encendido.
+              </p>
+            )}
+          </div>
         )}
 
         {/* Prompt label row */}

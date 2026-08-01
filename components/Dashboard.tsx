@@ -36,12 +36,19 @@ export function Dashboard({
     router.refresh();
   }
 
-  function handlePromptUpdated(agentKey: string, newPrompt: string, updatedAt: string) {
+  function handlePromptUpdated(
+    agentKey: string,
+    newPrompt: string,
+    updatedAt: string,
+    // El agente de evento también actualiza nombre, palabras y encendido.
+    extra?: Partial<Prompt>,
+  ) {
     setPrompts((arr) =>
       arr.map((p) =>
         p.agent_key === agentKey
           ? {
               ...p,
+              ...extra,
               system_prompt: newPrompt,
               updated_at: updatedAt,
               updated_by: user?.email || null,

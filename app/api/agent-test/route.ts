@@ -1,6 +1,12 @@
 import { anthropic, ANTHROPIC_MODEL } from '@/lib/anthropic';
 import { requireUser } from '@/lib/api-auth';
-import { decideRoute, ESCALATION_RESPONSE, type AgentKey } from '@/lib/agent-router';
+import {
+  decideRoute,
+  ESCALATION_RESPONSE,
+  type AgentKey,
+  type EventAgentConfig,
+} from '@/lib/agent-router';
+import { getEventAgent } from '@/lib/event-agent';
 import { buildFullSystemPrompt, type MockReservation } from '@/lib/prompt-context';
 import { sanitizeAgentResponse } from '@/lib/prompt-sanitizer';
 
@@ -26,11 +32,12 @@ function pickAgentByMode(
   explicit: AgentKey | undefined,
   lastUserMessage: string,
   hasReservation: boolean,
+  eventAgent: EventAgentConfig | null,
 ): { kind: 'agent'; agent: AgentKey } | { kind: 'escalation' } {
   if (mode === 'isolated') {
     return { kind: 'agent', agent: explicit || 'soporte' };
   }
-  return decideRoute({ message: lastUserMessage, hasReservation });
+  return decideRoute({ message: lastUserMessage, hasReservation, eventAgent });
 }
 
 function buildMockReservation(input?: Partial<MockReservation>): MockReservation {
@@ -65,7 +72,10 @@ export async function POST(req: Request) {
   const hasReservation = !!body.mockContext?.hasReservation;
   const phone = body.mockContext?.phone || '+50600000000';
 
-  const decision = pickAgentByMode(mode, body.agentKey, lastUser, hasReservation);
+  // El probador usa la misma configuración de evento que el bot real, para
+  // que lo que se prueba acá sea lo que pasa en producción.
+  const eventAgent = await getEventAgent();
+  const decision = pickAgentByMode(mode, body.agentKey, lastUser, hasReservation, eventAgent);
 
   if (decision.kind === 'escalation') {
     const payload = {
