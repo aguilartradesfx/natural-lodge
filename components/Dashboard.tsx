@@ -139,7 +139,7 @@ export function Dashboard({
         open={importOpen}
         onClose={() => setImportOpen(false)}
         title="Importar contactos"
-        subtitle="Subí el archivo de prospectos (CSV o Excel). Verás un resumen y confirmás antes de crear en GoHighLevel."
+        subtitle="Subí el archivo de prospectos (CSV o Excel). Verás un resumen y confirmás antes de crear en Bralto."
       >
         <ContactImport />
       </Modal>

@@ -191,7 +191,7 @@ export function ContactImport() {
       {phase === 'importing' && (
         <div className="flex flex-col items-center gap-3 py-10">
           <Loader2 className="animate-spin" size={26} />
-          <div>Importando a GoHighLevel…</div>
+          <div>Agregando a Bralto…</div>
         </div>
       )}
 

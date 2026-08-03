@@ -149,4 +149,26 @@ describe('POST /api/contacts/import', () => {
     expect(ghl.createNote).toHaveBeenCalledTimes(19);
     expect(ghl.createOpportunity).toHaveBeenCalledTimes(19);
   });
+
+  it('dedup por teléfono NO sobrescribe a una persona distinta que comparte la línea', async () => {
+    // Un contacto existente con el MISMO teléfono pero OTRA persona (línea de agencia
+    // compartida). No debe actualizarse: se intenta crear (y GHL lo rechazará por duplicado).
+    ghl.searchContacts.mockResolvedValue([
+      {
+        id: 'otra-persona',
+        email: '',
+        phone: '647-404-4155',
+        firstName: 'Otra',
+        lastName: 'Persona',
+        companyName: 'Otra Agencia',
+      },
+    ]);
+    const { POST } = await import('./route');
+    const res = await POST(req('prospects.csv', false));
+    const body = await res.json();
+    expect(ghl.updateContact).not.toHaveBeenCalled();
+    expect(ghl.createContact).toHaveBeenCalledTimes(20);
+    expect(body.report.updated).toBe(0);
+    expect(body.report.created).toBe(20);
+  });
 });

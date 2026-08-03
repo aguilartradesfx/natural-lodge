@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import type { RawProspect } from './prospect-types';
 import {
-  parseTags, deriveBatchTag, contactFingerprint, mapProspect, synthesizeTags,
+  parseTags, deriveBatchTag, contactFingerprint, mapProspect, synthesizeTags, cleanPhone,
 } from './prospect-mapper';
 
 function makeRaw(over: Partial<RawProspect>): RawProspect {
@@ -40,6 +40,32 @@ describe('contactFingerprint', () => {
   it('es estable ante mayúsculas/acentos/espacios', () => {
     expect(contactFingerprint('José', 'Pérez', 'Añó Tours'))
       .toBe(contactFingerprint(' jose ', 'perez', 'ano   tours'));
+  });
+});
+
+describe('cleanPhone', () => {
+  it('toma el primer número cuando hay dos separados por " / "', () => {
+    expect(cleanPhone('604-669-6607 / 1-877-523-7823')).toBe('+16046696607');
+  });
+  it('descarta extensiones tipo "EXT. 2995"', () => {
+    expect(cleanPhone('604-258-7395 EXT. 2995')).toBe('+16042587395');
+  });
+  it('descarta "ext 533 / WhatsApp ..."', () => {
+    expect(cleanPhone('604-669-6607 ext 533 / WhatsApp 604-220-6238')).toBe('+16046696607');
+  });
+  it('conserva el + y los dígitos de un número internacional', () => {
+    expect(cleanPhone('+1 778-873-1165')).toBe('+17788731165');
+  });
+  it('normaliza un número nacional de 11 dígitos con 1', () => {
+    expect(cleanPhone('1-888-747-2111')).toBe('+18887472111');
+  });
+  it('devuelve vacío si no hay dígitos suficientes', () => {
+    expect(cleanPhone('')).toBe('');
+    expect(cleanPhone('ver web')).toBe('');
+  });
+  it('mapProspect deja el teléfono limpio en el contacto', () => {
+    const m = mapProspect(makeRaw({ phone: '604-669-6607 / 1-877-523-7823' }), 'Import-lote');
+    expect(m.contact.phone).toBe('+16046696607');
   });
 });
 

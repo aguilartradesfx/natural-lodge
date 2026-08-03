@@ -92,12 +92,34 @@ const CUSTOM_FIELD_MAP: Array<{ name: string; get: (r: RawProspect) => string }>
   { name: 'Lead ID', get: (r) => r.leadId },
 ];
 
+/**
+ * Normaliza un teléfono crudo a UN solo número válido para GHL.
+ * Los workbooks traen basura: varios números ("604-... / 1-877-..."),
+ * extensiones ("EXT. 2995", "ext 533") y notas ("/ WhatsApp ..."). GHL
+ * rechaza cadenas demasiado largas ("string supplied is too long to be a
+ * phone number"), así que tomamos el PRIMER número y lo dejamos en E.164.
+ */
+export function cleanPhone(raw: string): string {
+  if (!raw) return '';
+  let s = raw.split(/[/;,\n]/)[0]; // primer número, antes de separadores
+  s = s.replace(/\b(ext|extension|whatsapp|tel|phone|cel|m[oó]vil)\b.*/i, '');
+  s = s.replace(/\bx\s*\d+.*/i, ''); // "x 533"
+  const hasPlus = s.trim().startsWith('+');
+  const digits = s.replace(/\D/g, '');
+  if (digits.length < 7) return '';
+  if (hasPlus) return '+' + digits.slice(0, 15);
+  if (digits.length === 10) return '+1' + digits; // Norteamérica
+  if (digits.length === 11 && digits[0] === '1') return '+' + digits;
+  return digits.slice(0, 15);
+}
+
 export function mapProspect(raw: RawProspect, batchTag: string): MappedProspect {
   let tags = parseTags(raw.tagsRaw);
   if (tags.length === 0) tags = synthesizeTags(raw);
   if (batchTag && !tags.includes(batchTag)) tags.push(batchTag);
 
-  const hasContactChannel = Boolean(raw.email || raw.phone);
+  const phone = cleanPhone(raw.phone);
+  const hasContactChannel = Boolean(raw.email || phone);
   if (!hasContactChannel) tags.push('Contacto-Pendiente');
 
   const customFields = CUSTOM_FIELD_MAP
@@ -114,7 +136,7 @@ export function mapProspect(raw: RawProspect, batchTag: string): MappedProspect 
       name: name || raw.company,
       companyName: raw.company,
       email: raw.email,
-      phone: raw.phone,
+      phone,
       website: raw.website,
       city: raw.city,
       state: raw.state,

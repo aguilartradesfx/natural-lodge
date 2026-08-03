@@ -168,7 +168,19 @@ async function findExisting(m: MappedProspect): Promise<GhlContact | null> {
   if (m.contact.phone) {
     const norm = (s: string) => s.replace(/\D/g, '').slice(-10);
     const target = norm(m.contact.phone);
-    return results.find((c) => norm(c.phone || '') !== '' && norm(c.phone || '') === target) || null;
+    const candidate = results.find(
+      (c) => norm(c.phone || '') !== '' && norm(c.phone || '') === target,
+    );
+    if (!candidate) return null;
+    // Varios asesores comparten el teléfono general de la agencia. No sobrescribas
+    // a una persona DISTINTA que comparte el número: solo tratamos como "el mismo"
+    // si la huella nombre+empresa coincide, o si el contacto existente no tiene
+    // nombre (un stub previo que estamos completando).
+    const sameFingerprint =
+      contactFingerprint(candidate.firstName || '', candidate.lastName || '', candidate.companyName || '') ===
+      m.fingerprint;
+    const candidateHasNoName = !(candidate.firstName || candidate.lastName);
+    return sameFingerprint || candidateHasNoName ? candidate : null;
   }
   // Sin canal: huella nombre+empresa.
   return (
