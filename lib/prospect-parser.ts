@@ -35,34 +35,46 @@ const CSV_MAP: Record<string, keyof RawProspect> = {
   Notes: 'notes',
 };
 
-const XLSX_MAP: Record<string, keyof RawProspect> = {
-  'Lead ID': 'leadId',
-  Priority: 'priority',
-  Score: 'leadScore',
-  'Lead Type': 'leadType',
-  Agency: 'company',
-  City: 'city',
-  Province: 'state',
-  Country: 'country',
-  Email: 'email',
-  Phone: 'phone',
-  Website: 'website',
-  'Contact Method': 'contactMethod',
-  'Best Contact URL': 'bestContactUrl',
-  'Pitch Angle': 'pitchAngle',
-  Instagram: 'instagram',
-  Facebook: 'facebook',
-  LinkedIn: 'linkedin',
-  'Market Reach': 'marketReach',
-  'Activity Level': 'activityLevel',
-  'Content Fit': 'contentFit',
-  Notes: 'notes',
-  'First Action': 'firstAction',
-  'Costa Rica Evidence': 'evidence',
-  'Nature Fit': 'natureFit',
-  Confidence: 'confidence',
-  // 'Advisor' se maneja aparte (se divide en firstName/lastName)
-};
+// El workbook del equipo NO tiene columnas fijas entre lotes (p.ej. Toronto usa
+// "Advisor"/"Agency"/"Score"/"Email"/"City"; Vancouver usa "Advisor Name"/
+// "Agency Name"/"Lead Score"/"Direct Email"/"City / Metro"). Por eso la hoja
+// "Manual Leads" se resuelve por ALIAS de encabezado normalizado, no por nombre
+// exacto. Cada campo lista los encabezados aceptados (ya normalizados) en orden
+// de preferencia; se toma la primera columna presente.
+const XLSX_FIELD_ALIASES: Array<[keyof RawProspect, string[]]> = [
+  ['leadId', ['lead id']],
+  ['priority', ['priority']],
+  ['leadScore', ['score', 'lead score']],
+  ['leadType', ['lead type']],
+  ['company', ['agency', 'agency name', 'company', 'company name']],
+  ['city', ['city', 'city / metro', 'city/metro']],
+  ['state', ['province', 'state', 'state/province', 'state / province']],
+  ['country', ['country']],
+  ['phone', ['phone']],
+  ['website', ['website']],
+  ['contactMethod', ['contact method', 'best contact method']],
+  ['bestContactUrl', ['best contact url', 'contact url']],
+  ['pitchAngle', ['pitch angle']],
+  ['instagram', ['instagram']],
+  ['facebook', ['facebook']],
+  ['linkedin', ['linkedin']],
+  ['marketReach', ['market reach']],
+  ['activityLevel', ['activity level']],
+  ['contentFit', ['content fit']],
+  ['notes', ['notes', 'personalization notes', 'notes / outcome']],
+  ['firstAction', ['first action', 'best first action']],
+  ['natureFit', ['nature fit']],
+  ['evidence', ['costa rica evidence']],
+  ['confidence', ['confidence']],
+];
+// Columna de nombre completo (se divide en firstName/lastName).
+const XLSX_NAME_ALIASES = ['advisor', 'advisor name'];
+// Solo el correo directo/personal; NO usamos el correo de agencia como personal.
+const XLSX_EMAIL_ALIASES = ['email', 'direct email'];
+
+function normHeader(h: string): string {
+  return h.trim().toLowerCase().replace(/\s+/g, ' ');
+}
 
 function emptyProspect(rowNumber: number): RawProspect {
   return {
@@ -97,8 +109,29 @@ export function parseProspectFile(data: Buffer | Uint8Array, filename: string): 
   if (!rows.length) throw new Error('El archivo está vacío');
 
   const header = (rows[0] as unknown[]).map((h) => String(h ?? '').trim());
-  const map = isCsv ? CSV_MAP : XLSX_MAP;
-  const advisorIdx = header.indexOf('Advisor');
+
+  // Índice de columnas por encabezado normalizado (para la resolución por alias del XLSX).
+  const colByNorm = new Map<string, number>();
+  header.forEach((h, idx) => {
+    const n = normHeader(h);
+    if (n && !colByNorm.has(n)) colByNorm.set(n, idx);
+  });
+  const findCol = (aliases: string[]): number => {
+    for (const a of aliases) {
+      const idx = colByNorm.get(a);
+      if (idx !== undefined) return idx;
+    }
+    return -1;
+  };
+
+  // XLSX: columnas resueltas por alias (soporta distintos layouts de workbook).
+  const xlsxFieldCols: Array<[keyof RawProspect, number]> = isCsv
+    ? []
+    : XLSX_FIELD_ALIASES.map(([f, al]) => [f, findCol(al)] as [keyof RawProspect, number]).filter(
+        ([, idx]) => idx >= 0,
+      );
+  const nameCol = isCsv ? -1 : findCol(XLSX_NAME_ALIASES);
+  const emailCol = isCsv ? -1 : findCol(XLSX_EMAIL_ALIASES);
 
   const prospects: RawProspect[] = [];
   for (let i = 1; i < rows.length; i++) {
@@ -106,22 +139,28 @@ export function parseProspectFile(data: Buffer | Uint8Array, filename: string): 
     if (cells.every((c) => c === '')) continue;
 
     const p = emptyProspect(prospects.length + 1);
-    for (let c = 0; c < header.length; c++) {
-      const field = map[header[c]];
-      if (field) (p[field] as string) = cells[c] ?? '';
-    }
 
-    if (!isCsv && advisorIdx >= 0) {
-      const full = (cells[advisorIdx] ?? '').trim();
-      const parts = full.split(/\s+/);
-      p.firstName = parts[0] ?? '';
-      p.lastName = parts.slice(1).join(' ');
-    }
-
-    if (isCsv && p.notes.includes(' | ')) {
-      const [note, action] = p.notes.split(' | ');
-      p.notes = (note ?? '').trim();
-      p.firstAction = (action ?? '').trim();
+    if (isCsv) {
+      // El CSV br_alto tiene columnas fijas → mapeo exacto por nombre.
+      for (let c = 0; c < header.length; c++) {
+        const field = CSV_MAP[header[c]];
+        if (field) (p[field] as string) = cells[c] ?? '';
+      }
+      if (p.notes.includes(' | ')) {
+        const [note, action] = p.notes.split(' | ');
+        p.notes = (note ?? '').trim();
+        p.firstAction = (action ?? '').trim();
+      }
+    } else {
+      for (const [field, col] of xlsxFieldCols) {
+        (p[field] as string) = cells[col] ?? '';
+      }
+      if (nameCol >= 0) {
+        const parts = (cells[nameCol] ?? '').trim().split(/\s+/).filter(Boolean);
+        p.firstName = parts[0] ?? '';
+        p.lastName = parts.slice(1).join(' ');
+      }
+      if (emailCol >= 0) p.email = cells[emailCol] ?? '';
     }
 
     if (!p.source) p.source = DEFAULT_SOURCE;

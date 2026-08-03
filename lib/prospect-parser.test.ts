@@ -54,3 +54,35 @@ describe('parseProspectFile — XLSX (hoja Manual Leads)', () => {
     expect(prospects[0].stage).toBe('New Prospect');
   });
 });
+
+// El workbook del equipo cambia de columnas entre lotes: Vancouver usa
+// "Advisor Name" / "Agency Name" / "Direct Email" / "Lead Score" / "City / Metro".
+describe('parseProspectFile — XLSX layout Vancouver (Natural Lodge.xlsx)', () => {
+  const { format, prospects } = parseProspectFile(
+    fx('prospects-vancouver.xlsx'),
+    'prospects-vancouver.xlsx',
+  );
+
+  it('detecta formato xlsx y 16 prospectos', () => {
+    expect(format).toBe('xlsx');
+    expect(prospects.length).toBe(16);
+  });
+
+  it('mapea nombre (Advisor Name) y empresa (Agency Name)', () => {
+    const p = prospects[0];
+    expect(p.firstName).toBe('Deb');
+    expect(p.lastName).toBe('Howe');
+    expect(p.company).toBe('Travel Best Bets / Jubilee Tours & Travel');
+  });
+
+  it('mapea Direct Email, City / Metro y Lead Score', () => {
+    expect(prospects[1].email).toBe('lystra@qmooniti.com'); // Lystra Sam
+    expect(prospects[0].city).toBe('Vancouver / Burnaby');
+    expect(prospects[0].leadScore).toBe('10');
+    expect(prospects[0].priority).toBe('A');
+  });
+
+  it('deja email vacío cuando no hay Direct Email (no usa el correo de agencia)', () => {
+    expect(prospects[0].email).toBe(''); // Deb Howe no tiene Direct Email
+  });
+});
