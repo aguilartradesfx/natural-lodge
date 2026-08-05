@@ -1,16 +1,11 @@
 'use client';
 import { useState } from 'react';
-import { Upload, CheckCircle2, AlertTriangle, Loader2 } from 'lucide-react';
+import { Upload, CheckCircle2, AlertTriangle, Loader2, X } from 'lucide-react';
+import type { RawProspect } from '@/lib/prospect-types';
 
 type PreviewRow = {
-  rowNumber: number;
-  name: string;
-  company: string;
-  email: string;
-  phone: string;
-  tags: string[];
-  hasContactChannel: boolean;
-  warnings: string[];
+  rowNumber: number; name: string; company: string; email: string; phone: string;
+  tags: string[]; hasContactChannel: boolean; warnings: string[];
 };
 type Metrics = {
   total: number; withChannel: number; withoutChannel: number;
@@ -18,12 +13,15 @@ type Metrics = {
 };
 type Preview = {
   ok: true; format: string; metrics: Metrics;
-  summary: { text: string; alerts: string[] }; preview: PreviewRow[];
+  summary: { text: string; alerts: string[] }; preview: PreviewRow[]; batchTag: string;
+};
+type FailedRow = {
+  rowNumber: number; name: string; reason: string; hint: string;
+  matchingField?: 'phone' | 'email'; raw: RawProspect;
 };
 type Report = {
   created: number; updated: number;
-  failed: Array<{ rowNumber: number; name: string; reason: string }>;
-  missingCustomFields: string[]; pipelineResolved: boolean;
+  failed: FailedRow[]; missingCustomFields: string[]; pipelineResolved: boolean;
 };
 
 type Phase = 'idle' | 'previewing' | 'preview' | 'importing' | 'done' | 'error';
@@ -33,17 +31,15 @@ export function ContactImport() {
   const [file, setFile] = useState<File | null>(null);
   const [preview, setPreview] = useState<Preview | null>(null);
   const [report, setReport] = useState<Report | null>(null);
-  const [error, setError] = useState<string>('');
+  const [batchTag, setBatchTag] = useState('');
+  const [totals, setTotals] = useState({ created: 0, updated: 0 });
+  const [failedRows, setFailedRows] = useState<FailedRow[]>([]);
+  const [retrying, setRetrying] = useState(false);
+  const [error, setError] = useState('');
 
-  async function post(f: File, dryRun: boolean) {
-    const form = new FormData();
-    form.set('file', f);
-    const res = await fetch(`/api/contacts/import${dryRun ? '?dryRun=1' : ''}`, {
-      method: 'POST',
-      body: form,
-    });
+  async function parseJson(res: Response) {
     const text = await res.text();
-    let body;
+    let body: Record<string, unknown> = {};
     try {
       body = text ? JSON.parse(text) : {};
     } catch {
@@ -51,10 +47,19 @@ export function ContactImport() {
     }
     if (!res.ok) {
       throw new Error(
-        body.error || (res.status === 401 ? 'Tu sesión expiró. Iniciá sesión de nuevo.' : 'Error ' + res.status),
+        (body.error as string) ||
+          (res.status === 401 ? 'Tu sesión expiró. Iniciá sesión de nuevo.' : 'Error ' + res.status),
       );
     }
     return body;
+  }
+
+  async function postFile(f: File, dryRun: boolean) {
+    const form = new FormData();
+    form.set('file', f);
+    return parseJson(
+      await fetch(`/api/contacts/import${dryRun ? '?dryRun=1' : ''}`, { method: 'POST', body: form }),
+    );
   }
 
   async function onFile(f: File) {
@@ -62,7 +67,7 @@ export function ContactImport() {
     setError('');
     setPhase('previewing');
     try {
-      setPreview(await post(f, true));
+      setPreview((await postFile(f, true)) as unknown as Preview);
       setPhase('preview');
     } catch (e) {
       setError((e as Error).message);
@@ -75,12 +80,42 @@ export function ContactImport() {
     setPhase('importing');
     setError('');
     try {
-      const body = await post(file, false);
+      const body = (await postFile(file, false)) as { report: Report; batchTag: string };
       setReport(body.report);
+      setBatchTag(body.batchTag);
+      setTotals({ created: body.report.created, updated: body.report.updated });
+      setFailedRows(body.report.failed);
       setPhase('done');
     } catch (e) {
       setError((e as Error).message);
       setPhase('error');
+    }
+  }
+
+  function editRow(idx: number, patch: Partial<RawProspect>) {
+    setFailedRows((rows) => rows.map((r, i) => (i === idx ? { ...r, raw: { ...r.raw, ...patch } } : r)));
+  }
+
+  async function retry() {
+    if (!failedRows.length) return;
+    setRetrying(true);
+    setError('');
+    try {
+      const res = await fetch('/api/contacts/import/retry', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ batchTag, rows: failedRows.map((f) => f.raw) }),
+      });
+      const body = (await parseJson(res)) as { report: Report };
+      setTotals((t) => ({
+        created: t.created + body.report.created,
+        updated: t.updated + body.report.updated,
+      }));
+      setFailedRows(body.report.failed);
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setRetrying(false);
     }
   }
 
@@ -89,6 +124,9 @@ export function ContactImport() {
     setFile(null);
     setPreview(null);
     setReport(null);
+    setBatchTag('');
+    setTotals({ created: 0, updated: 0 });
+    setFailedRows([]);
     setError('');
   }
 
@@ -160,11 +198,7 @@ export function ContactImport() {
                       <td className="px-3 py-2 whitespace-nowrap">{r.name || '—'}</td>
                       <td className="px-3 py-2">{r.company || '—'}</td>
                       <td className="px-3 py-2 whitespace-nowrap">
-                        {r.hasContactChannel ? (
-                          r.email || r.phone
-                        ) : (
-                          <span className="text-amber-300">Pendiente</span>
-                        )}
+                        {r.hasContactChannel ? r.email || r.phone : <span className="text-amber-300">Pendiente</span>}
                       </td>
                       <td className="px-3 py-2 text-[--color-cream-mute]">{r.tags.length}</td>
                     </tr>
@@ -196,39 +230,93 @@ export function ContactImport() {
       )}
 
       {phase === 'done' && report && (
-        <div className="flex flex-col gap-3">
+        <div className="flex flex-col gap-4">
           <div className="glass rounded-2xl p-5 flex items-start gap-3">
             <CheckCircle2 className="text-[--color-green-glow] mt-0.5" size={22} />
             <div>
-              <div className="font-medium">Importación completa</div>
+              <div className="font-medium">
+                {failedRows.length === 0 ? '¡Todo cargado!' : 'Importación completa'}
+              </div>
               <div className="text-[13px] text-[--color-cream-mute] mt-1">
-                {report.created} creados · {report.updated} ya existían y se actualizaron
-                {report.failed.length > 0 && ` · ${report.failed.length} con error`}
+                {totals.created} creados · {totals.updated} ya existían y se actualizaron
+                {failedRows.length > 0 && ` · ${failedRows.length} con error`}
               </div>
               {!report.pipelineResolved && (
                 <div className="text-[12px] text-amber-300 mt-2">
-                  No se encontró el pipeline en GHL: no se crearon oportunidades.
+                  No se encontró el pipeline en Bralto: no se crearon oportunidades.
                 </div>
               )}
               {report.missingCustomFields.length > 0 && (
                 <div className="text-[12px] text-amber-300 mt-1">
-                  Campos no encontrados en GHL (no se llenaron): {report.missingCustomFields.join(', ')}
+                  Campos no encontrados en Bralto (no se llenaron): {report.missingCustomFields.join(', ')}
                 </div>
               )}
             </div>
           </div>
-          {report.failed.length > 0 && (
-            <div className="glass rounded-2xl p-4 text-[12.5px]">
-              <div className="font-medium mb-2">Filas con error</div>
-              <ul className="flex flex-col gap-1">
-                {report.failed.map((f) => (
-                  <li key={f.rowNumber} className="text-[--color-cream-mute]">
-                    Fila {f.rowNumber} ({f.name}): {f.reason}
-                  </li>
-                ))}
-              </ul>
+
+          {failedRows.length > 0 && (
+            <div className="flex flex-col gap-3">
+              <div className="flex items-center justify-between">
+                <div className="font-medium text-[13px]">Filas con error — corrígelas y reintenta</div>
+                <button
+                  onClick={retry}
+                  disabled={retrying}
+                  className="px-4 py-2 rounded-full text-[13px] font-medium text-[--color-green-glow] glass-pill disabled:opacity-50"
+                >
+                  {retrying ? 'Reintentando…' : `Reintentar (${failedRows.length})`}
+                </button>
+              </div>
+
+              {failedRows.map((f, idx) => (
+                <div key={f.rowNumber} className="glass rounded-2xl p-4 flex flex-col gap-2.5">
+                  <div className="font-medium">
+                    {f.name || 'Sin nombre'}{' '}
+                    <span className="text-[--color-cream-mute] font-normal">· fila {f.rowNumber}</span>
+                  </div>
+                  <div className="flex items-start gap-2 text-[12.5px] text-amber-300">
+                    <AlertTriangle size={14} className="mt-0.5 shrink-0" /> {f.hint}
+                  </div>
+                  <div className="flex flex-col sm:flex-row gap-2.5">
+                    <label className="flex-1 text-[12px] text-[--color-cream-mute]">
+                      Correo
+                      <input
+                        value={f.raw.email}
+                        onChange={(e) => editRow(idx, { email: e.target.value })}
+                        className="mt-1 w-full glass-pill rounded-lg px-3 py-1.5 text-[13px] text-[--color-cream] bg-transparent"
+                        placeholder="correo@ejemplo.com"
+                      />
+                    </label>
+                    <label className="flex-1 text-[12px] text-[--color-cream-mute]">
+                      Teléfono
+                      <input
+                        value={f.raw.phone}
+                        onChange={(e) => editRow(idx, { phone: e.target.value })}
+                        className="mt-1 w-full glass-pill rounded-lg px-3 py-1.5 text-[13px] text-[--color-cream] bg-transparent"
+                        placeholder="+506…"
+                      />
+                    </label>
+                  </div>
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => editRow(idx, { phone: '' })}
+                      className="glass-pill inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[12px]"
+                    >
+                      <X size={12} /> Mantener correo (quita el tel)
+                    </button>
+                    <button
+                      onClick={() => editRow(idx, { email: '' })}
+                      className="glass-pill inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[12px]"
+                    >
+                      <X size={12} /> Mantener teléfono (quita el correo)
+                    </button>
+                  </div>
+                </div>
+              ))}
             </div>
           )}
+
+          {error && <div className="text-[12.5px] text-amber-300">{error}</div>}
+
           <div className="flex justify-end">
             <button onClick={reset} className="glass-pill px-4 py-2 rounded-full text-[13px]">
               Importar otro archivo
