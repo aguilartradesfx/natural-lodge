@@ -1,0 +1,89 @@
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+import type { RawProspect } from './prospect-types';
+
+vi.mock('@/lib/ghl', () => ({
+  searchContacts: vi.fn(async () => []),
+  createContact: vi.fn(async () => ({ id: 'c1' })),
+  updateContact: vi.fn(async () => ({ id: 'c1' })),
+  createNote: vi.fn(async () => {}),
+  createOpportunity: vi.fn(async () => ({ id: 'o1' })),
+  getPipelines: vi.fn(async () => []),
+  getCustomFields: vi.fn(async () => []),
+  addContactTags: vi.fn(async () => {}),
+}));
+
+import * as ghl from '@/lib/ghl';
+import { mapProspect } from './prospect-mapper';
+import { explainGhlError, importProspects } from './prospect-importer';
+
+function raw(over: Partial<RawProspect>): RawProspect {
+  return {
+    firstName: 'Ana', lastName: 'Pérez', company: 'Viajes X', email: '', phone: '', website: '',
+    city: '', state: '', country: '', source: '', tagsRaw: '', pipeline: '', stage: '',
+    leadScore: '', priority: 'A', leadType: 'Advisor', pitchAngle: '', contactMethod: '',
+    bestContactUrl: '', instagram: '', facebook: '', linkedin: '', marketReach: '',
+    activityLevel: '', contentFit: '', notes: '', firstAction: '', natureFit: '',
+    evidence: '', confidence: '', leadId: '', rowNumber: 1, ...over,
+  };
+}
+const mapped = (over: Partial<RawProspect>) => [mapProspect(raw(over), 'Import-x')];
+
+beforeEach(() => {
+  vi.mocked(ghl.searchContacts).mockResolvedValue([]);
+  vi.mocked(ghl.createContact).mockReset().mockResolvedValue({ id: 'c1' } as never);
+  vi.mocked(ghl.updateContact).mockReset().mockResolvedValue({ id: 'c1' } as never);
+  vi.mocked(ghl.addContactTags).mockReset().mockResolvedValue(undefined as never);
+  vi.mocked(ghl.createNote).mockReset().mockResolvedValue(undefined as never);
+});
+
+describe('explainGhlError', () => {
+  it('duplicado por teléfono → pista de teléfono', () => {
+    const r = explainGhlError('GHL 400 en /contacts/: {"statusCode":400,"message":"This location does not allow duplicated contacts.","meta":{"matchingField":"phone"}}');
+    expect(r.matchingField).toBe('phone');
+    expect(r.hint).toContain('teléfono');
+  });
+  it('duplicado por correo → pista de correo', () => {
+    const r = explainGhlError('x {"message":"This location does not allow duplicated contacts.","meta":{"matchingField":"email"}}');
+    expect(r.matchingField).toBe('email');
+    expect(r.hint).toContain('correo');
+  });
+  it('teléfono muy largo → pista de teléfono inválido', () => {
+    const r = explainGhlError('GHL 400: {"message":"The string supplied is too long to be a phone number"}');
+    expect(r.hint).toContain('teléfono no es válido');
+  });
+  it('otro error → devuelve el mensaje crudo', () => {
+    expect(explainGhlError('algo raro').hint).toBe('algo raro');
+  });
+});
+
+describe('importProspects', () => {
+  it('crea cuando no existe', async () => {
+    const rep = await importProspects(mapped({ email: 'ana@x.com' }));
+    expect(rep.created).toBe(1);
+    expect(rep.updated).toBe(0);
+    expect(ghl.createContact).toHaveBeenCalledTimes(1);
+  });
+
+  it('actualiza cuando ya existe (por correo)', async () => {
+    vi.mocked(ghl.searchContacts).mockResolvedValue([
+      { id: 'exist', email: 'ana@x.com' } as never,
+    ]);
+    const rep = await importProspects(mapped({ email: 'ana@x.com' }));
+    expect(rep.updated).toBe(1);
+    expect(rep.created).toBe(0);
+    expect(ghl.updateContact).toHaveBeenCalledWith('exist', expect.anything());
+  });
+
+  it('un fallo por fila no aborta y enriquece la fila con pista + raw', async () => {
+    vi.mocked(ghl.createContact).mockRejectedValueOnce(
+      new Error('GHL 400 en /contacts/: {"message":"This location does not allow duplicated contacts.","meta":{"matchingField":"phone"}}'),
+    );
+    const rep = await importProspects(mapped({ email: 'ana@x.com', rowNumber: 7 }));
+    expect(rep.created).toBe(0);
+    expect(rep.failed).toHaveLength(1);
+    expect(rep.failed[0].rowNumber).toBe(7);
+    expect(rep.failed[0].matchingField).toBe('phone');
+    expect(rep.failed[0].hint).toContain('teléfono');
+    expect(rep.failed[0].raw.email).toBe('ana@x.com');
+  });
+});
