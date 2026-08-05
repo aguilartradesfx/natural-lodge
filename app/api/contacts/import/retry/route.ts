@@ -11,14 +11,14 @@ export async function POST(req: Request) {
   const auth = await requireUser();
   if (auth.error) return auth.error;
 
-  let body: { batchTag?: string; rows?: RawProspect[] };
+  let body: { batchTag?: string; rows?: RawProspect[] } | null;
   try {
     body = await req.json();
   } catch {
     return Response.json({ error: 'JSON inválido' }, { status: 400 });
   }
 
-  const rows = body.rows;
+  const rows = body?.rows;
   if (!Array.isArray(rows) || rows.length === 0) {
     return Response.json({ error: 'No hay filas para reintentar' }, { status: 400 });
   }
@@ -26,8 +26,13 @@ export async function POST(req: Request) {
     return Response.json({ error: 'Demasiadas filas (máx 500)' }, { status: 400 });
   }
 
-  const batchTag = typeof body.batchTag === 'string' ? body.batchTag : '';
-  const mapped = rows.map((r) => mapProspect(r, batchTag));
+  const batchTag = typeof body?.batchTag === 'string' ? body.batchTag : '';
+  let mapped;
+  try {
+    mapped = rows.map((r) => mapProspect(r, batchTag));
+  } catch {
+    return Response.json({ error: 'Filas inválidas' }, { status: 400 });
+  }
   const report = await importProspects(mapped);
   return Response.json({ ok: true, report, batchTag });
 }

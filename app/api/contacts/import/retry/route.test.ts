@@ -53,4 +53,29 @@ describe('POST /api/contacts/import/retry', () => {
     expect(ghl.createContact).toHaveBeenCalledTimes(1);
     expect(body.batchTag).toBe('Import-x');
   });
+
+  it('rechaza body null', async () => {
+    const { POST } = await import('./route');
+    const res = await POST(req(null));
+    expect(res.status).toBe(400);
+  });
+
+  it('rechaza rows que no es un array', async () => {
+    const { POST } = await import('./route');
+    const res = await POST(req({ batchTag: 'x', rows: 'nope' }));
+    expect(res.status).toBe(400);
+  });
+
+  it('rechaza más de 500 filas', async () => {
+    const { POST } = await import('./route');
+    const rows = Array.from({ length: 501 }, () => raw({ email: 'a@b.com' }));
+    const res = await POST(req({ batchTag: 'x', rows }));
+    expect(res.status).toBe(400);
+  });
+
+  it('rechaza una fila malformada', async () => {
+    const { POST } = await import('./route');
+    const res = await POST(req({ batchTag: 'x', rows: [{ firstName: 'X' }] } as never));
+    expect(res.status).toBe(400);
+  });
 });
