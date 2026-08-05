@@ -7,7 +7,6 @@ import { BotToggle } from './BotToggle';
 import { AgentWorkspace, type Prompt } from './AgentWorkspace';
 import { PromptAssistant } from './PromptAssistant';
 import { AgentTester } from './AgentTester';
-import { ContactImport } from './ContactImport';
 import { Modal, Drawer } from './ui/Overlay';
 import type { User } from '@supabase/supabase-js';
 
@@ -28,7 +27,6 @@ export function Dashboard({
   const [selectedKey, setSelectedKey] = useState(initialPrompts[0]?.agent_key || 'soporte');
   const [assistantOpen, setAssistantOpen] = useState(false);
   const [testerOpen, setTesterOpen] = useState(false);
-  const [importOpen, setImportOpen] = useState(false);
 
   async function handleSignOut() {
     await supabase.auth.signOut();
@@ -66,7 +64,6 @@ export function Dashboard({
           onSignOut={handleSignOut}
           onOpenAssistant={() => setAssistantOpen(true)}
           onOpenTester={() => setTesterOpen(true)}
-          onOpenImport={() => setImportOpen(true)}
         />
 
         {/* Hero */}
@@ -133,16 +130,6 @@ export function Dashboard({
       <Drawer open={testerOpen} onClose={() => setTesterOpen(false)}>
         <AgentTester prompts={prompts} initialAgent={selectedKey} />
       </Drawer>
-
-      {/* Importador de contactos — modal */}
-      <Modal
-        open={importOpen}
-        onClose={() => setImportOpen(false)}
-        title="Importar contactos"
-        subtitle="Subí el archivo de prospectos (CSV o Excel). Verás un resumen y confirmás antes de crear en Bralto."
-      >
-        <ContactImport />
-      </Modal>
     </>
   );
 }

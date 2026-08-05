@@ -7,13 +7,11 @@ export function AppHeader({
   onSignOut,
   onOpenAssistant,
   onOpenTester,
-  onOpenImport,
 }: {
   email: string | null;
   onSignOut: () => void;
   onOpenAssistant: () => void;
   onOpenTester: () => void;
-  onOpenImport: () => void;
 }) {
   const initial = (email || '?').slice(0, 1).toUpperCase();
 
@@ -66,9 +64,13 @@ export function AppHeader({
           </span>
           <span className="hidden sm:inline">Revisión</span>
         </Link>
-        <HeaderPill onClick={onOpenImport} icon={<Upload size={14} />}>
+        <Link
+          href="/importar"
+          className="glass-pill inline-flex items-center gap-2 px-4 py-[9px] rounded-full text-[--color-cream-dim] text-[12.5px] font-medium cursor-pointer transition-all duration-200 hover:text-[--color-cream] hover:-translate-y-[1px]"
+        >
+          <span className="opacity-85"><Upload size={14} /></span>
           <span className="hidden sm:inline">Importar contactos</span>
-        </HeaderPill>
+        </Link>
         <HeaderPill onClick={onOpenAssistant} icon={<Sparkles size={14} />}>
           <span className="hidden sm:inline">Asistente IA</span>
         </HeaderPill>
