@@ -1,6 +1,6 @@
 import { after } from 'next/server';
 import { createAdminClient } from '@/lib/supabase/admin';
-import { anthropic, ANTHROPIC_MODEL } from '@/lib/anthropic';
+import { anthropic, ANTHROPIC_MODEL, NO_THINKING } from '@/lib/anthropic';
 import {
   decideRoute,
   ESCALATION_RESPONSE,
@@ -9,11 +9,20 @@ import {
 import { buildFullSystemPrompt, type MockReservation } from '@/lib/prompt-context';
 import { sanitizeAgentResponse } from '@/lib/prompt-sanitizer';
 import {
-  searchConversation,
+  searchConversations,
   getConversationMessages,
   sendMessage,
+  addContactToWorkflow,
+  getContactTags,
+  type GhlConversation,
+  type GhlMessage,
 } from '@/lib/ghl';
-import { processLastMessage, type ProcessedMessage } from '@/lib/chatbot-message';
+import {
+  processLastMessage,
+  mapMessageTypeToChannel,
+  esRecuperable,
+  type ProcessedMessage,
+} from '@/lib/chatbot-message';
 import { describeImage } from '@/lib/vision';
 import { transcribeAudio } from '@/lib/transcribe';
 import { findActiveReservation } from '@/lib/reservas';
@@ -27,7 +36,40 @@ export const dynamic = 'force-dynamic';
 export const maxDuration = 60;
 
 const WORKFLOW = 'chatbot_v2';
-const SEND_DELAY_MS = Number(process.env.CHATBOT_SEND_DELAY_MS ?? 30000);
+
+/**
+ * Debounce ANTES de leer la conversación (antes estaba antes de enviar).
+ * Cumple dos funciones: agrupa los mensajes que el huésped manda seguidos, y
+ * le da tiempo a GHL a indexar el mensaje que disparó el webhook — su API
+ * suele devolver la conversación vacía si se consulta al instante.
+ */
+const READ_DELAY_MS = Number(
+  process.env.CHATBOT_READ_DELAY_MS ?? process.env.CHATBOT_SEND_DELAY_MS ?? 30000,
+);
+
+/** Esperas entre reintentos de lectura de mensajes. */
+const MESSAGE_RETRY_DELAYS_MS = [2000, 5000, 10000];
+
+/**
+ * Presupuesto total del procesamiento en background. Vercel corta la función
+ * a los `maxDuration` segundos y todo lo que quede a medias se pierde en
+ * silencio: sin respuesta enviada y sin log.
+ */
+const TIME_BUDGET_MS = Number(process.env.CHATBOT_TIME_BUDGET_MS ?? 50_000);
+
+/** Tiempo que hay que dejar libre para Claude, el envío y el log. */
+const RESERVA_RESPUESTA_MS = 25_000;
+
+/** Tag que silencia al bot para un contacto puntual. */
+const TAG_SILENCIO = 'bot desactivado';
+
+/** Workflow de GHL que avisa al equipo cuando el bot escala. */
+const ESCALATION_WORKFLOW_ID =
+  process.env.GHL_ESCALATION_WORKFLOW_ID || 'ba255d47-c90c-425e-8ea7-6b5d9a6211f0';
+
+/** Ventana de servicio de WhatsApp: fuera de ella solo entran plantillas. */
+const WHATSAPP_WINDOW_MS = 24 * 60 * 60 * 1000;
+
 const RATE_LIMIT_MAX = 10;
 
 const MEMORY_WINDOW: Record<AgentKey, number> = {
@@ -46,7 +88,24 @@ function pick(body: Body, ...keys: string[]): string {
   return '';
 }
 
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
 export async function POST(req: Request) {
+  // ── 0) Seguridad opcional: secreto compartido (mismo patrón que Orbe) ──
+  // Sin esto la ruta está abierta: cualquiera con la URL dispara respuestas y
+  // consume tokens. Es opcional para no romper el webhook ya configurado en
+  // GHL; en cuanto la variable existe, se exige.
+  const secret = process.env.CHATBOT_WEBHOOK_SECRET;
+  if (secret) {
+    const provided =
+      req.headers.get('x-chatbot-secret') ||
+      new URL(req.url).searchParams.get('secret') ||
+      '';
+    if (provided !== secret) {
+      return Response.json({ error: 'No autorizado' }, { status: 401 });
+    }
+  }
+
   let body: Body;
   try {
     body = (await req.json()) as Body;
@@ -134,22 +193,88 @@ export async function POST(req: Request) {
 
 type Ctx = { contactId: string; phone: string; email: string; locationId: string };
 
-async function processConversation(ctx: Ctx): Promise<void> {
-  // Traer la conversación y los últimos mensajes desde GHL.
-  let messages: Awaited<ReturnType<typeof getConversationMessages>> = [];
-  const conv = await searchConversation({ contactId: ctx.contactId, locationId: ctx.locationId });
-  if (conv) messages = await getConversationMessages(conv.id, 5);
+type Salida = {
+  mensaje: string;
+  inboundChannel: string | null;
+  agente: string;
+  hasReservation: boolean;
+  messageIn: string;
+  transferToSales: boolean;
+  conversationId: string;
+  /** Última entrada del huésped, para la ventana de 24h de WhatsApp. */
+  ultimoInboundMs: number;
+  /** Si hay que avisarle al equipo por el workflow de GHL. */
+  escalar: boolean;
+};
 
-  const processed = processLastMessage(messages);
+async function processConversation(ctx: Ctx): Promise<void> {
+  const limite = Date.now() + TIME_BUDGET_MS;
+  const restante = () => limite - Date.now();
+
+  // El debounce va acá: agrupa mensajes seguidos y le da tiempo a GHL a
+  // indexar. Antes esperaba justo antes de enviar, donde no servía para nada
+  // salvo consumir el presupuesto de la función. Se recorta para que siempre
+  // quede tiempo de contestar.
+  const espera = Math.min(READ_DELAY_MS, restante() - RESERVA_RESPUESTA_MS);
+  if (espera > 0) await sleep(espera);
+
+  // El tag manda sobre el body del webhook: GHL no siempre incluye `tags`, y
+  // cuando falta el contacto silenciado recibía respuestas igual.
+  if (await estaSilenciado(ctx.contactId)) return;
+
+  const conversaciones = await searchConversations({
+    contactId: ctx.contactId,
+    locationId: ctx.locationId,
+  });
+  const conv = conversaciones[0] ?? null;
+
+  // Sin conversación no sabemos por qué canal escribió. Callarse es mejor que
+  // contestar por un canal adivinado: en WhatsApp sin ventana abierta el
+  // mensaje se pierde igual, y el huésped ve al bot hablando solo.
+  if (!conv) {
+    await logWorkflowError({
+      workflow: WORKFLOW,
+      node: 'buscar_conversacion',
+      error: new Error('GHL no devolvió ninguna conversación para el contacto'),
+      context: { contactId: ctx.contactId, phone: ctx.phone },
+    });
+    return;
+  }
+
+  const canalConversacion = mapMessageTypeToChannel(conv.lastMessageType);
+  const messages = await leerMensajes(conv.id, restante);
+
+  let processed = processLastMessage(messages, canalConversacion);
+
+  // La búsqueda de conversación ya trae el último mensaje. Si el endpoint de
+  // mensajes vino vacío, ese cuerpo es un respaldo real — mucho mejor que
+  // responder "no pude encontrar tu mensaje".
+  if (!processed.procesable && esRecuperable(processed.reason)) {
+    processed = desdeConversacion(conv, canalConversacion) ?? processed;
+  }
+
+  const conversationId = processed.conversationId || conv.id;
+  const ultimoInbound = ultimoInboundMs(messages, conv);
+
+  // Un solo turno por mensaje, aunque GHL dispare el webhook varias veces.
+  const claveMensaje = processed.ghlMessageId || `${conv.id}:${conv.lastMessageDate ?? ''}`;
+  if (await yaAtendido(claveMensaje, ctx.contactId)) return;
+
+  const base = {
+    inboundChannel: processed.inboundChannel,
+    conversationId,
+    ultimoInboundMs: ultimoInbound,
+    hasReservation: false,
+    messageIn: '',
+    transferToSales: false,
+    escalar: false,
+  };
 
   if (!processed.procesable) {
     await deliver(ctx, {
+      ...base,
       mensaje: processed.errorMessage || 'No pude procesar tu mensaje. ¿Podés intentar de nuevo?',
-      inboundChannel: processed.inboundChannel,
       agente: 'sistema',
-      hasReservation: false,
-      messageIn: '',
-      transferToSales: false,
     });
     return;
   }
@@ -158,13 +283,10 @@ async function processConversation(ctx: Ctx): Promise<void> {
   const message = await resolveMedia(processed);
   if (message === null) {
     await deliver(ctx, {
+      ...base,
       mensaje:
         'Por el momento no puedo procesar audios. Si querés contarme con palabras de qué se trata, con gusto te ayudo.',
-      inboundChannel: processed.inboundChannel,
       agente: 'sistema',
-      hasReservation: false,
-      messageIn: '',
-      transferToSales: false,
     });
     return;
   }
@@ -178,12 +300,12 @@ async function processConversation(ctx: Ctx): Promise<void> {
 
   if (decision.kind === 'escalation') {
     await deliver(ctx, {
+      ...base,
       mensaje: ESCALATION_RESPONSE,
-      inboundChannel: processed.inboundChannel,
       agente: 'escalamiento',
       hasReservation,
       messageIn: message,
-      transferToSales: false,
+      escalar: true,
     });
     return;
   }
@@ -196,13 +318,112 @@ async function processConversation(ctx: Ctx): Promise<void> {
   });
 
   await deliver(ctx, {
+    ...base,
     mensaje: reply.mensaje,
-    inboundChannel: processed.inboundChannel,
     agente: decision.agent,
     hasReservation,
     messageIn: message,
     transferToSales: reply.transferToSales,
+    // Prometer contacto y no avisarle a nadie es el peor de los dos mundos:
+    // el traspaso a ventas dispara el mismo workflow que el escalamiento.
+    escalar: reply.transferToSales,
   });
+}
+
+/**
+ * ¿El equipo silenció al bot para este contacto? Si GHL no responde, seguimos:
+ * quedarse mudo por un fallo de lectura es peor que contestar de más.
+ */
+async function estaSilenciado(contactId: string): Promise<boolean> {
+  try {
+    const tags = await getContactTags(contactId);
+    return tags.some((t) => t.toLowerCase().includes(TAG_SILENCIO));
+  } catch (err) {
+    await logWorkflowError({ workflow: WORKFLOW, node: 'leer_tags', error: err });
+    return false;
+  }
+}
+
+/**
+ * Lee los mensajes con reintentos. GHL indexa con retraso, así que un solo
+ * intento devuelve vacío con frecuencia y el bot respondía un error.
+ *
+ * Los reintentos se cortan si no queda tiempo para contestar: prefiero
+ * degradar a `lastMessageBody` que agotar el presupuesto reintentando.
+ */
+async function leerMensajes(
+  conversationId: string,
+  restante: () => number,
+): Promise<GhlMessage[]> {
+  for (let i = 0; i <= MESSAGE_RETRY_DELAYS_MS.length; i++) {
+    try {
+      // 20 y no 5: el bot suele mandar varias respuestas seguidas, y con una
+      // ventana chica la última entrada del huésped queda fuera. Solo se usa
+      // el inbound más reciente, así que traer de más no cuesta nada.
+      const messages = await getConversationMessages(conversationId, 20);
+      if (messages.length > 0) return messages;
+    } catch (err) {
+      await logWorkflowError({ workflow: WORKFLOW, node: 'obtener_mensajes', error: err });
+    }
+    if (i >= MESSAGE_RETRY_DELAYS_MS.length) break;
+    const espera = MESSAGE_RETRY_DELAYS_MS[i];
+    if (restante() - espera < RESERVA_RESPUESTA_MS) break;
+    await sleep(espera);
+  }
+  return [];
+}
+
+/** Arma un mensaje procesable con lo que la conversación ya sabe. */
+function desdeConversacion(
+  conv: GhlConversation,
+  canal: string | null,
+): ProcessedMessage | null {
+  const body = (conv.lastMessageBody || '').trim();
+  if (!body || !canal) return null;
+  if (conv.lastMessageDirection === 'outbound') return null;
+  return {
+    procesable: true,
+    message: body,
+    messageType: 'text',
+    conversationId: conv.id,
+    inboundChannel: canal,
+  };
+}
+
+function ultimoInboundMs(messages: GhlMessage[], conv: GhlConversation): number {
+  const fechas = messages
+    .filter((m) => m.direction === 'inbound')
+    .map((m) => Date.parse(m.dateAdded ?? ''))
+    .filter((ms) => Number.isFinite(ms));
+  if (fechas.length > 0) return Math.max(...fechas);
+
+  if (conv.lastMessageDirection === 'outbound') return 0;
+  const ms =
+    typeof conv.lastMessageDate === 'number'
+      ? conv.lastMessageDate
+      : Date.parse(conv.lastMessageDate ?? '');
+  return Number.isFinite(ms) ? ms : 0;
+}
+
+/**
+ * Reclama el mensaje para esta corrida. El PRIMARY KEY resuelve la carrera:
+ * si otra corrida ya lo insertó, esta se retira sin responder.
+ */
+async function yaAtendido(clave: string, contactId: string): Promise<boolean> {
+  if (!clave) return false;
+  const supabase = createAdminClient();
+  const { error } = await supabase
+    .from('chatbot_mensajes_atendidos')
+    .insert({ ghl_message_id: clave, contact_id: contactId });
+  if (!error) return false;
+  if (error.code === '23505') return true; // clave duplicada: ya lo atendió otra
+  // Si la tabla falla por otra razón, preferimos responder de más que callar.
+  await logWorkflowError({
+    workflow: WORKFLOW,
+    node: 'idempotencia',
+    error: new Error(error.message),
+  });
+  return false;
 }
 
 /** Convierte imagen/audio a texto. Devuelve null si el audio no se pudo transcribir. */
@@ -241,6 +462,15 @@ async function runAgent(input: {
     .eq('agent_key', input.agent)
     .maybeSingle();
 
+  if (!promptRow?.system_prompt) {
+    // Sin prompt el bot contesta genérico y parece un problema del modelo.
+    await logWorkflowError({
+      workflow: WORKFLOW,
+      node: 'cargar_prompt',
+      error: new Error(`Sin system_prompt para el agente "${input.agent}"`),
+    });
+  }
+
   const systemPrompt = buildFullSystemPrompt({
     systemPrompt: promptRow?.system_prompt || 'Eres un asistente del hotel.',
     guestContext: { phone: input.phone, reservation: input.reservation },
@@ -256,6 +486,7 @@ async function runAgent(input: {
     const res = await anthropic.messages.create({
       model: ANTHROPIC_MODEL,
       max_tokens: 2048,
+      thinking: NO_THINKING,
       system: systemPrompt,
       messages: [...history, { role: 'user', content: input.message }],
     });
@@ -266,6 +497,9 @@ async function runAgent(input: {
   }
 
   if (!raw) {
+    // Guardamos igual el turno del huésped: si no, el próximo mensaje llega
+    // sin contexto y el bot vuelve a preguntar lo mismo.
+    await appendTurns(key, [{ role: 'user', content: input.message }]);
     return { mensaje: CHATBOT_FALLBACK_MESSAGE, transferToSales: false };
   }
 
@@ -277,39 +511,77 @@ async function runAgent(input: {
   return { mensaje: sanitized.message, transferToSales: sanitized.transferToSales };
 }
 
-/** Espera el delay de debounce, envía la respuesta a GHL y registra el log. */
-async function deliver(
-  ctx: Ctx,
-  out: {
-    mensaje: string;
-    inboundChannel: string;
-    agente: string;
-    hasReservation: boolean;
-    messageIn: string;
-    transferToSales: boolean;
-  },
-): Promise<void> {
-  if (SEND_DELAY_MS > 0) await new Promise((r) => setTimeout(r, SEND_DELAY_MS));
+/**
+ * ¿Podemos enviar por este canal? WhatsApp solo acepta mensaje libre dentro
+ * de las 24h posteriores a la última entrada del huésped; fuera de eso hace
+ * falta una plantilla aprobada por Meta y el envío se pierde en silencio.
+ */
+function puedeEnviar(canal: string, ultimoInbound: number): boolean {
+  if (canal !== 'WhatsApp') return true;
+  if (!ultimoInbound) return true; // sin dato, no bloqueamos
+  return Date.now() - ultimoInbound < WHATSAPP_WINDOW_MS;
+}
 
-  try {
-    await sendMessage({
-      type: out.inboundChannel,
-      contactId: ctx.contactId,
-      message: out.mensaje,
+/** Envía la respuesta a GHL, dispara el escalamiento y registra el log. */
+async function deliver(ctx: Ctx, out: Salida): Promise<void> {
+  let enviado = false;
+
+  if (!out.inboundChannel) {
+    await logWorkflowError({
+      workflow: WORKFLOW,
+      node: 'enviar_ghl',
+      error: new Error('Canal de entrada desconocido: no se envía respuesta'),
+      context: { contactId: ctx.contactId, conversationId: out.conversationId },
     });
-  } catch (err) {
-    await logWorkflowError({ workflow: WORKFLOW, node: 'enviar_ghl', error: err });
+  } else if (!puedeEnviar(out.inboundChannel, out.ultimoInboundMs)) {
+    await logWorkflowError({
+      workflow: WORKFLOW,
+      node: 'enviar_ghl',
+      error: new Error('Fuera de la ventana de 24h de WhatsApp: requiere plantilla'),
+      context: { contactId: ctx.contactId, conversationId: out.conversationId },
+    });
+  } else {
+    try {
+      await sendMessage({
+        type: out.inboundChannel,
+        contactId: ctx.contactId,
+        message: out.mensaje,
+      });
+      enviado = true;
+    } catch (err) {
+      await logWorkflowError({ workflow: WORKFLOW, node: 'enviar_ghl', error: err });
+    }
+  }
+
+  let workflowDisparado: boolean | null = null;
+  if (out.escalar) {
+    try {
+      await addContactToWorkflow(ctx.contactId, ESCALATION_WORKFLOW_ID);
+      workflowDisparado = true;
+    } catch (err) {
+      workflowDisparado = false;
+      await logWorkflowError({
+        workflow: WORKFLOW,
+        node: 'workflow_escalamiento',
+        error: err,
+        context: { contactId: ctx.contactId, workflowId: ESCALATION_WORKFLOW_ID },
+      });
+    }
   }
 
   const supabase = createAdminClient();
   await supabase.from('chatbot_logs').insert({
     phone: ctx.phone,
     contact_id: ctx.contactId,
-    conversation_id: '',
+    conversation_id: out.conversationId,
     message_in: out.messageIn,
+    // Se guarda siempre, enviado o no: el ciclo de revisión compara este texto
+    // contra el fallback para detectar la señal `error_bot`.
     message_out: out.mensaje,
+    enviado,
     has_reservation: out.hasReservation,
     agente_usado: out.agente,
     transferir_a_ventas: out.transferToSales,
+    workflow_disparado: workflowDisparado,
   });
 }

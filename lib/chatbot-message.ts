@@ -6,18 +6,47 @@ import type { GhlMessage } from '@/lib/ghl';
  * valida y devuelve si es procesable.
  */
 
+/**
+ * Por qué un mensaje no se pudo procesar. Distingue los casos donde todavía
+ * podemos recuperarnos leyendo la conversación (`sin_mensajes`, `sin_inbound`)
+ * de los que son definitivos (adjunto no soportado, mensaje vacío).
+ */
+export type UnprocessableReason =
+  | 'sin_mensajes'
+  | 'sin_inbound'
+  | 'vacio'
+  | 'muy_largo'
+  | 'no_soportado';
+
+/** Motivos donde el cuerpo de la conversación sirve como respaldo. */
+export function esRecuperable(reason?: UnprocessableReason): boolean {
+  return reason === 'sin_mensajes' || reason === 'sin_inbound';
+}
+
 export type ProcessedMessage = {
   procesable: boolean;
   errorMessage?: string;
+  reason?: UnprocessableReason;
   message?: string;
   messageType: 'text' | 'image' | 'audio' | 'error';
   attachmentUrl?: string;
   conversationId?: string;
   ghlMessageId?: string;
-  inboundChannel: string;
+  /** null cuando no se pudo determinar. Nunca se adivina un canal. */
+  inboundChannel: string | null;
 };
 
-export function mapMessageTypeToChannel(msgType?: string, numericType?: number): string {
+/**
+ * Traduce el tipo de mensaje de GHL a un canal de envío.
+ *
+ * Devuelve null si no reconoce el tipo. Antes caía en 'WhatsApp' por
+ * defecto, y eso hacía que un SMS se contestara por WhatsApp — donde, sin
+ * una ventana de 24h abierta, el mensaje nunca llega.
+ */
+export function mapMessageTypeToChannel(
+  msgType?: string,
+  numericType?: number,
+): string | null {
   const mt = (msgType || '').toUpperCase();
   const nt = Number(numericType);
   if (mt === 'TYPE_WHATSAPP') return 'WhatsApp';
@@ -38,7 +67,7 @@ export function mapMessageTypeToChannel(msgType?: string, numericType?: number):
   if (nt === 20) return 'SMS';
   if (nt === 21) return 'Email';
   if (nt === 29) return 'Live_Chat';
-  return 'WhatsApp';
+  return null;
 }
 
 function detectAttachmentType(url: string): 'image' | 'audio' | 'video' | 'document' | 'unknown' {
@@ -52,28 +81,49 @@ function detectAttachmentType(url: string): 'image' | 'audio' | 'video' | 'docum
   return 'unknown';
 }
 
-export function processLastMessage(messages: GhlMessage[]): ProcessedMessage {
+function toMillis(value?: string): number {
+  if (!value) return 0;
+  const ms = Date.parse(value);
+  return Number.isFinite(ms) ? ms : 0;
+}
+
+/**
+ * Ordena de más nuevo a más viejo. GHL suele devolverlos así, pero nada lo
+ * garantiza: sin ordenar, "el primer inbound del array" puede ser un mensaje
+ * de hace días y el bot contesta a destiempo.
+ */
+function masRecientesPrimero(messages: GhlMessage[]): GhlMessage[] {
+  return [...messages].sort((a, b) => toMillis(b.dateAdded) - toMillis(a.dateAdded));
+}
+
+/**
+ * @param messages Últimos mensajes de la conversación.
+ * @param canalConversacion Canal deducido de la conversación, usado como
+ *   respaldo cuando el mensaje no permite determinarlo.
+ */
+export function processLastMessage(
+  messages: GhlMessage[],
+  canalConversacion: string | null = null,
+): ProcessedMessage {
   if (!messages || messages.length === 0) {
-    return {
-      procesable: false,
-      errorMessage: 'No pude encontrar tu mensaje en el sistema. Por favor escribime de nuevo.',
-      messageType: 'error',
-      inboundChannel: 'WhatsApp',
-    };
+    return unsupported(
+      'No pude encontrar tu mensaje en el sistema. Por favor escribime de nuevo.',
+      canalConversacion,
+      'sin_mensajes',
+    );
   }
 
-  const lastMsg = messages.find((m) => m.direction === 'inbound');
+  const lastMsg = masRecientesPrimero(messages).find((m) => m.direction === 'inbound');
   if (!lastMsg) {
-    return {
-      procesable: false,
-      errorMessage:
-        'No encontré mensajes nuevos tuyos. Si querés escribir, por favor enviame tu consulta de nuevo.',
-      messageType: 'error',
-      inboundChannel: 'WhatsApp',
-    };
+    return unsupported(
+      'No encontré mensajes nuevos tuyos. Si querés escribir, por favor enviame tu consulta de nuevo.',
+      canalConversacion,
+      'sin_inbound',
+    );
   }
 
-  const inboundChannel = mapMessageTypeToChannel(lastMsg.messageType, lastMsg.type);
+  const inboundChannel =
+    mapMessageTypeToChannel(lastMsg.messageType, lastMsg.type) ?? canalConversacion;
   const body = (lastMsg.body || '').toString();
   const attachments = Array.isArray(lastMsg.attachments) ? lastMsg.attachments : [];
 
@@ -91,31 +141,38 @@ export function processLastMessage(messages: GhlMessage[]): ProcessedMessage {
       return unsupported(
         'Por el momento no puedo procesar videos. Si querés contarme con palabras o un audio de qué se trata, con gusto te ayudo.',
         inboundChannel,
+        'no_soportado',
       );
     } else if (detected === 'document') {
       return unsupported(
         'Por el momento no puedo procesar documentos PDF u otros archivos. Si querés contarme con palabras de qué se trata, con gusto te ayudo.',
         inboundChannel,
+        'no_soportado',
       );
     } else {
       return unsupported(
         'Por el momento solo puedo procesar texto, imágenes y audios. Si querés contarme con palabras de qué se trata, con gusto te ayudo.',
         inboundChannel,
+        'no_soportado',
       );
     }
   }
 
   if (!body && !attachmentUrl) {
-    return unsupported('Tu mensaje llegó vacío. Por favor escribime de nuevo.', inboundChannel);
+    return unsupported(
+      'Tu mensaje llegó vacío. Por favor escribime de nuevo.',
+      inboundChannel,
+      'vacio',
+    );
   }
   if (body.length > 2000) {
     return unsupported(
       'Tu mensaje es muy largo. Por favor enviame uno más corto (máximo 2000 caracteres).',
       inboundChannel,
+      'muy_largo',
     );
   }
 
-  // eslint-disable-next-line no-control-regex
   const cleanBody = body.replace(/[\x00-\x08\x0B\x0C\x0E-\x1F]/g, '').trim();
 
   return {
@@ -129,6 +186,10 @@ export function processLastMessage(messages: GhlMessage[]): ProcessedMessage {
   };
 }
 
-function unsupported(errorMessage: string, inboundChannel: string): ProcessedMessage {
-  return { procesable: false, errorMessage, messageType: 'error', inboundChannel };
+function unsupported(
+  errorMessage: string,
+  inboundChannel: string | null,
+  reason: UnprocessableReason,
+): ProcessedMessage {
+  return { procesable: false, errorMessage, reason, messageType: 'error', inboundChannel };
 }

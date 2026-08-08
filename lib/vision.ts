@@ -1,5 +1,5 @@
 import 'server-only';
-import { anthropic, ANTHROPIC_MODEL } from '@/lib/anthropic';
+import { anthropic, ANTHROPIC_MODEL, NO_THINKING } from '@/lib/anthropic';
 
 /**
  * Describe una imagen en español usando Claude (visión nativa).
@@ -9,6 +9,8 @@ export async function describeImage(imageUrl: string): Promise<string> {
   const res = await anthropic.messages.create({
     model: ANTHROPIC_MODEL,
     max_tokens: 250,
+    // Sin esto el modelo gasta los 250 tokens pensando y la descripción sale vacía.
+    thinking: NO_THINKING,
     messages: [
       {
         role: 'user',

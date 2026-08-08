@@ -125,6 +125,22 @@ export async function upsertContact(input: {
   return data.contact;
 }
 
+/**
+ * Tags reales del contacto en GHL.
+ *
+ * El webhook trae un campo `tags`, pero no siempre: cuando falta, el tag
+ * "bot desactivado" que el equipo puso a mano quedaba ignorado y el bot le
+ * respondía igual a un contacto silenciado.
+ */
+export async function getContactTags(contactId: string): Promise<string[]> {
+  const data = await withRetry(() =>
+    ghlFetch<{ contact?: GhlContact }>(`/contacts/${contactId}`, {
+      version: '2021-07-28',
+    }),
+  );
+  return data.contact?.tags ?? [];
+}
+
 export async function addContactTags(contactId: string, tags: string[]): Promise<void> {
   await withRetry(() =>
     ghlFetch(`/contacts/${contactId}/tags`, {
@@ -202,25 +218,54 @@ export type GhlMessage = {
   messageType?: string;
   type?: number;
   body?: string;
+  dateAdded?: string;
   attachments?: Array<string | { url?: string; fileUrl?: string }>;
 };
 
-export async function searchConversation(input: {
+/**
+ * La búsqueda de conversaciones ya trae el canal y el cuerpo del último
+ * mensaje. Es una segunda fuente para el mismo dato: cuando
+ * /conversations/{id}/messages devuelve vacío (GHL suele indexar con
+ * retraso), esto sigue diciendo por dónde escribió el huésped.
+ */
+export type GhlConversation = {
+  id: string;
+  lastMessageType?: string;
+  lastMessageBody?: string;
+  lastMessageDate?: string | number;
+  lastMessageDirection?: 'inbound' | 'outbound';
+};
+
+function toMillis(value?: string | number): number {
+  if (value === undefined || value === null) return 0;
+  const ms = typeof value === 'number' ? value : Date.parse(value);
+  return Number.isFinite(ms) ? ms : 0;
+}
+
+/**
+ * Todas las conversaciones del contacto, de la más reciente a la más vieja.
+ *
+ * Antes se pedía `limit: 1` y se tomaba lo que viniera primero: con un
+ * contacto que tiene IG y SMS abiertos, eso elegía la conversación
+ * equivocada y el bot contestaba por el canal equivocado.
+ */
+export async function searchConversations(input: {
   contactId: string;
   locationId?: string;
-}): Promise<{ id: string } | null> {
-  const data = await ghlFetch<{ conversations?: Array<{ id: string }> }>(
+}): Promise<GhlConversation[]> {
+  const data = await ghlFetch<{ conversations?: GhlConversation[] }>(
     '/conversations/search',
     {
       version: '2021-04-15',
       query: {
         locationId: input.locationId || GHL_LOCATION_ID,
         contactId: input.contactId,
-        limit: 1,
+        limit: 20,
       },
     },
   );
-  return data.conversations?.[0] ?? null;
+  const list = data.conversations ?? [];
+  return [...list].sort((a, b) => toMillis(b.lastMessageDate) - toMillis(a.lastMessageDate));
 }
 
 export async function getConversationMessages(
@@ -246,6 +291,26 @@ export async function sendMessage(input: {
       method: 'POST',
       version: '2021-04-15',
       body: { type: input.type, contactId: input.contactId, message: input.message },
+    }),
+  );
+}
+
+/**
+ * Mete el contacto en un workflow de GHL. Es lo que avisa al equipo cuando
+ * el bot escala una conversación: sin esto el huésped recibe un "en breve
+ * te contactamos" que no le llega a nadie.
+ *
+ * Requiere que el Private Integration Token tenga el scope de workflows.
+ */
+export async function addContactToWorkflow(
+  contactId: string,
+  workflowId: string,
+): Promise<void> {
+  await withRetry(() =>
+    ghlFetch(`/contacts/${contactId}/workflow/${workflowId}`, {
+      method: 'POST',
+      version: '2021-07-28',
+      body: { eventStartTime: new Date().toISOString() },
     }),
   );
 }

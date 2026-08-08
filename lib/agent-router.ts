@@ -61,10 +61,14 @@ export function decideRoute(opts: {
     return { kind: 'escalation' };
   }
 
-  if (opts.hasReservation) return { kind: 'agent', agent: 'soporte' };
+  // El evento se evalúa ANTES que la reserva. Un huésped alojado que pregunta
+  // por una boda quiere al agente del evento, no a soporte: antes la reserva
+  // ganaba siempre y esas consultas terminaban contestadas por el agente
+  // equivocado.
   if (matchesEvent(msg, opts.eventAgent)) {
     return { kind: 'agent', agent: opts.eventAgent!.agentKey };
   }
+  if (opts.hasReservation) return { kind: 'agent', agent: 'soporte' };
   return { kind: 'agent', agent: 'ventas' };
 }
 

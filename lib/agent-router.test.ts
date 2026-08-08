@@ -45,13 +45,31 @@ describe('decideRoute — soporte y ventas', () => {
     });
   });
 
-  it('la reserva tiene prioridad sobre el evento', () => {
-    // Comportamiento histórico: un huésped alojado pregunta por el evento y
-    // igual lo atiende soporte. Se conserva a propósito.
+  it('el evento tiene prioridad sobre la reserva', () => {
+    // Un huésped alojado que pregunta por el evento quiere al agente del
+    // evento. Antes la reserva ganaba siempre y lo atendía soporte.
     const r = decideRoute({
       message: 'cómo participo en el big day',
       hasReservation: true,
       eventAgent: EVENTO,
+    });
+    expect(r).toEqual({ kind: 'agent', agent: 'bigday' });
+  });
+
+  it('con reserva y sin palabras del evento sigue siendo soporte', () => {
+    const r = decideRoute({
+      message: 'a qué hora puedo hacer el check-out',
+      hasReservation: true,
+      eventAgent: EVENTO,
+    });
+    expect(r).toEqual({ kind: 'agent', agent: 'soporte' });
+  });
+
+  it('el evento apagado no le roba la conversación a soporte', () => {
+    const r = decideRoute({
+      message: 'cómo participo en el big day',
+      hasReservation: true,
+      eventAgent: { ...EVENTO, isEnabled: false },
     });
     expect(r).toEqual({ kind: 'agent', agent: 'soporte' });
   });

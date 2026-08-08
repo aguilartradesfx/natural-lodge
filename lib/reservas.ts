@@ -13,6 +13,33 @@ export function todayCostaRica(): string {
 }
 
 /**
+ * Los últimos 8 dígitos del teléfono — el número nacional de Costa Rica.
+ *
+ * El webhook manda el teléfono en un formato y Orbe lo guardó en otro:
+ * con espacios, con guiones, con o sin `+506`. Comparar los strings enteros
+ * fallaba, y un huésped alojado sin reserva encontrada cae en ventas y recibe
+ * respuestas de prospecto. Los últimos 8 dígitos sobreviven a todos esos
+ * formatos.
+ */
+export function telefonoSufijo(phone: string): string | null {
+  const digitos = (phone || '').replace(/\D/g, '');
+  return digitos.length >= 8 ? digitos.slice(-8) : null;
+}
+
+/**
+ * Filtro OR de PostgREST para ubicar la reserva. Devuelve null si no hay
+ * ningún dato con el que buscar — mejor no consultar que traer cualquier fila.
+ */
+export function construirFiltroHuesped(phone: string, email: string): string | null {
+  const partes: string[] = [];
+  const sufijo = telefonoSufijo(phone);
+  if (sufijo) partes.push(`telefono.like.*${sufijo}`);
+  // Las comillas evitan que un email raro rompa la sintaxis del filtro.
+  if (email) partes.push(`email.eq."${email}"`);
+  return partes.length > 0 ? partes.join(',') : null;
+}
+
+/**
  * Busca la reserva activa de un huésped por teléfono o email.
  * Port del nodo "Buscar Reserva": estado Commit y check_out >= hoy (CR),
  * la más próxima por check_in.
@@ -24,16 +51,15 @@ export async function findActiveReservation(
   const supabase = createAdminClient();
   const hoy = todayCostaRica();
 
-  // OR por teléfono/email (email solo si viene).
-  const orParts = [`telefono.eq.${phone}`];
-  if (email) orParts.push(`email.eq.${email}`);
+  const filtro = construirFiltroHuesped(phone, email);
+  if (!filtro) return null;
 
   const { data, error } = await supabase
     .from('reservas_orbe')
     .select('id_reserva_principal, nombre, apellido, check_in, check_out, tipo_habitacion, estado, nombre_hotel')
     .eq('estado', 'Commit')
     .gte('check_out', `${hoy}T00:00:00-06:00`)
-    .or(orParts.join(','))
+    .or(filtro)
     .order('check_in', { ascending: true })
     .limit(1)
     .maybeSingle();
