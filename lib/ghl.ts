@@ -310,9 +310,21 @@ export async function addContactToWorkflow(
     ghlFetch(`/contacts/${contactId}/workflow/${workflowId}`, {
       method: 'POST',
       version: '2021-07-28',
-      body: { eventStartTime: new Date().toISOString() },
+      body: { eventStartTime: ghlTimestamp() },
     }),
   );
+}
+
+/**
+ * Marca de tiempo en el formato que exige GHL: offset numérico explícito y
+ * sin milisegundos.
+ *
+ * `toISOString()` produce `2026-08-08T22:11:44.118Z` y GHL lo rechaza con un
+ * 422 pidiendo "a date and time with timezone offset" — la `Z` no le sirve
+ * aunque sea ISO 8601 válido.
+ */
+export function ghlTimestamp(date: Date = new Date()): string {
+  return date.toISOString().replace(/\.\d{3}Z$/, '+00:00');
 }
 
 // ── Inbound Webhooks (capture URLs que disparan automatizaciones en GHL) ──

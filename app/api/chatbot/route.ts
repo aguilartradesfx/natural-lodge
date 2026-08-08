@@ -70,6 +70,12 @@ const ESCALATION_WORKFLOW_ID =
 /** Ventana de servicio de WhatsApp: fuera de ella solo entran plantillas. */
 const WHATSAPP_WINDOW_MS = 24 * 60 * 60 * 1000;
 
+/** Antigüedad máxima para considerar que una conversación espera respuesta. */
+const VENTANA_PENDIENTES_MS = 15 * 60 * 1000;
+
+/** Tope de conversaciones atendidas por corrida, para acotar el tiempo. */
+const MAX_CONVERSACIONES = 3;
+
 const RATE_LIMIT_MAX = 10;
 
 const MEMORY_WINDOW: Record<AgentKey, number> = {
@@ -243,12 +249,11 @@ async function processConversation(ctx: Ctx): Promise<void> {
     contactId: ctx.contactId,
     locationId: ctx.locationId,
   });
-  const conv = conversaciones[0] ?? null;
 
   // Sin conversación no sabemos por qué canal escribió. Callarse es mejor que
   // contestar por un canal adivinado: en WhatsApp sin ventana abierta el
   // mensaje se pierde igual, y el huésped ve al bot hablando solo.
-  if (!conv) {
+  if (conversaciones.length === 0) {
     await logWorkflowError({
       workflow: WORKFLOW,
       node: 'buscar_conversacion',
@@ -258,6 +263,42 @@ async function processConversation(ctx: Ctx): Promise<void> {
     return;
   }
 
+  // El webhook no dice a qué conversación pertenece el mensaje que lo disparó.
+  // Antes se atendía solo la más reciente del contacto, y un huésped que
+  // escribía por WhatsApp y SMS casi a la vez recibía UNA sola respuesta: los
+  // dos webhooks convergían en la misma conversación y la idempotencia
+  // descartaba al segundo. Ahora se atienden todas las que tengan entrada
+  // fresca; la tabla de idempotencia garantiza una respuesta por mensaje.
+  for (const conv of conversacionesPendientes(conversaciones)) {
+    if (restante() < RESERVA_RESPUESTA_MS) break;
+    await atenderConversacion(ctx, conv, restante);
+  }
+}
+
+/**
+ * Conversaciones que pueden tener un mensaje sin contestar: las que terminan
+ * en una entrada del huésped y son recientes. Si ninguna califica se cae a la
+ * más reciente, que es el comportamiento anterior.
+ */
+function conversacionesPendientes(convs: GhlConversation[]): GhlConversation[] {
+  const ahora = Date.now();
+  const frescas = convs.filter((c) => {
+    if (c.lastMessageDirection === 'outbound') return false;
+    const ms =
+      typeof c.lastMessageDate === 'number'
+        ? c.lastMessageDate
+        : Date.parse(String(c.lastMessageDate ?? ''));
+    return Number.isFinite(ms) && ahora - ms < VENTANA_PENDIENTES_MS;
+  });
+  return (frescas.length > 0 ? frescas : convs.slice(0, 1)).slice(0, MAX_CONVERSACIONES);
+}
+
+/** Atiende una conversación concreta: lee, decide y responde por su canal. */
+async function atenderConversacion(
+  ctx: Ctx,
+  conv: GhlConversation,
+  restante: () => number,
+): Promise<void> {
   const canalConversacion = mapMessageTypeToChannel(conv.lastMessageType);
   const messages = await leerMensajes(conv.id, restante);
 
@@ -598,6 +639,7 @@ async function deliver(ctx: Ctx, out: Salida): Promise<void> {
     // contra el fallback para detectar la señal `error_bot`.
     message_out: out.mensaje,
     enviado,
+    canal: out.inboundChannel,
     has_reservation: out.hasReservation,
     agente_usado: out.agente,
     transferir_a_ventas: out.transferToSales,
