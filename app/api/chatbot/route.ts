@@ -153,18 +153,28 @@ export async function POST(req: Request) {
   if (!contactId) {
     return Response.json({ error: true, code: 400, mensaje: 'Falta contact_id' }, { status: 400 });
   }
-  if (!phone) {
-    return Response.json({ error: true, code: 400, mensaje: 'Falta phone' }, { status: 400 });
-  }
+
+  /**
+   * Identidad del huésped para memoria y rate-limit: el teléfono cuando
+   * existe, el contacto cuando no.
+   *
+   * Antes el teléfono era obligatorio y sin él se devolvía 400. Un DM de
+   * Instagram o Facebook llega de un contacto que muchas veces no tiene
+   * teléfono, así que el bot nunca respondía por esos canales. El contacto
+   * es la identidad real; el teléfono es solo un dato más.
+   */
+  const identidad = phone || contactId;
 
   // ── 3) Rate limit (≥10 msgs en 60s) ───────────────────────────
   try {
     const since = new Date(Date.now() - 60_000).toISOString();
-    const { count } = await supabase
+    const base = supabase
       .from('chatbot_logs')
       .select('id', { count: 'exact', head: true })
-      .eq('phone', phone)
       .gte('created_at', since);
+    const { count } = await (phone
+      ? base.eq('phone', phone)
+      : base.eq('contact_id', contactId));
     if ((count ?? 0) >= RATE_LIMIT_MAX) {
       return Response.json(
         { error: true, code: 429, mensaje: 'Demasiadas solicitudes. Por favor espera un momento.' },
@@ -178,7 +188,7 @@ export async function POST(req: Request) {
   // ── 4) Ack inmediato + procesamiento en background ─────────────
   after(async () => {
     try {
-      await processConversation({ contactId, phone, email, locationId });
+      await processConversation({ contactId, phone, identidad, email, locationId });
     } catch (err) {
       await logWorkflowError({ workflow: WORKFLOW, error: err, context: { contactId, phone } });
     }
@@ -191,7 +201,14 @@ export async function POST(req: Request) {
 // Procesamiento asíncrono de la conversación
 // ════════════════════════════════════════════════════════════════
 
-type Ctx = { contactId: string; phone: string; email: string; locationId: string };
+type Ctx = {
+  contactId: string;
+  phone: string;
+  /** Teléfono si existe, contacto si no. Clave de memoria y rate-limit. */
+  identidad: string;
+  email: string;
+  locationId: string;
+};
 
 type Salida = {
   mensaje: string;
@@ -313,6 +330,7 @@ async function processConversation(ctx: Ctx): Promise<void> {
   const reply = await runAgent({
     agent: decision.agent,
     message,
+    identidad: ctx.identidad,
     phone: ctx.phone,
     reservation,
   });
@@ -451,6 +469,7 @@ async function resolveMedia(p: ProcessedMessage): Promise<string | null> {
 async function runAgent(input: {
   agent: AgentKey;
   message: string;
+  identidad: string;
   phone: string;
   reservation: MockReservation | null;
 }): Promise<{ mensaje: string; transferToSales: boolean }> {
@@ -476,7 +495,7 @@ async function runAgent(input: {
     guestContext: { phone: input.phone, reservation: input.reservation },
   });
 
-  const key = sessionKey(input.phone, input.agent);
+  const key = sessionKey(input.identidad, input.agent);
   const history = await getHistory(key, MEMORY_WINDOW[input.agent]);
   // Anthropic exige que la conversación empiece con 'user'.
   while (history.length && history[0].role === 'assistant') history.shift();
