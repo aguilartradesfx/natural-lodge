@@ -28,6 +28,7 @@ import { transcribeAudio } from '@/lib/transcribe';
 import { findActiveReservation } from '@/lib/reservas';
 import { getEventAgent } from '@/lib/event-agent';
 import { getHistory, appendTurns, sessionKey } from '@/lib/chat-memory';
+import { notificarEquipo } from '@/lib/escalation-notify';
 import { logWorkflowError } from '@/lib/error-log';
 import { CHATBOT_FALLBACK_MESSAGE } from '@/lib/review-constants';
 
@@ -629,7 +630,10 @@ async function deliver(ctx: Ctx, out: Salida): Promise<void> {
   }
 
   let workflowDisparado: boolean | null = null;
+  let notificados: number | null = null;
   if (out.escalar) {
+    // El workflow de GHL se sigue disparando: es el que aplica el tag que
+    // silencia al bot para que el humano tome la conversación.
     try {
       await addContactToWorkflow(ctx.contactId, ESCALATION_WORKFLOW_ID);
       workflowDisparado = true;
@@ -642,6 +646,14 @@ async function deliver(ctx: Ctx, out: Salida): Promise<void> {
         context: { contactId: ctx.contactId, workflowId: ESCALATION_WORKFLOW_ID },
       });
     }
+
+    // El aviso al equipo lo mandamos nosotros por SMS. El nodo de notificación
+    // interna de GHL se ejecuta pero no entrega nada, y falla sin dejar rastro.
+    notificados = await notificarEquipo({
+      workflow: WORKFLOW,
+      contactId: ctx.contactId,
+      canal: out.inboundChannel,
+    });
   }
 
   const supabase = createAdminClient();
@@ -659,5 +671,6 @@ async function deliver(ctx: Ctx, out: Salida): Promise<void> {
     agente_usado: out.agente,
     transferir_a_ventas: out.transferToSales,
     workflow_disparado: workflowDisparado,
+    notificados,
   });
 }

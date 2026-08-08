@@ -132,13 +132,18 @@ export async function upsertContact(input: {
  * "bot desactivado" que el equipo puso a mano quedaba ignorado y el bot le
  * respondía igual a un contacto silenciado.
  */
-export async function getContactTags(contactId: string): Promise<string[]> {
+export async function getContact(contactId: string): Promise<GhlContact | null> {
   const data = await withRetry(() =>
     ghlFetch<{ contact?: GhlContact }>(`/contacts/${contactId}`, {
       version: '2021-07-28',
     }),
   );
-  return data.contact?.tags ?? [];
+  return data.contact ?? null;
+}
+
+export async function getContactTags(contactId: string): Promise<string[]> {
+  const contact = await getContact(contactId);
+  return contact?.tags ?? [];
 }
 
 export async function addContactTags(contactId: string, tags: string[]): Promise<void> {
