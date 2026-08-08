@@ -44,7 +44,7 @@ const WORKFLOW = 'chatbot_v2';
  * suele devolver la conversación vacía si se consulta al instante.
  */
 const READ_DELAY_MS = Number(
-  process.env.CHATBOT_READ_DELAY_MS ?? process.env.CHATBOT_SEND_DELAY_MS ?? 30000,
+  process.env.CHATBOT_READ_DELAY_MS ?? process.env.CHATBOT_SEND_DELAY_MS ?? 15000,
 );
 
 /** Esperas entre reintentos de lectura de mensajes. */
@@ -269,9 +269,24 @@ async function processConversation(ctx: Ctx): Promise<void> {
   // dos webhooks convergían en la misma conversación y la idempotencia
   // descartaba al segundo. Ahora se atienden todas las que tengan entrada
   // fresca; la tabla de idempotencia garantiza una respuesta por mensaje.
-  for (const conv of conversacionesPendientes(conversaciones)) {
-    if (restante() < RESERVA_RESPUESTA_MS) break;
-    await atenderConversacion(ctx, conv, restante);
+  const pendientes = conversacionesPendientes(conversaciones);
+  for (let i = 0; i < pendientes.length; i++) {
+    // La primera SIEMPRE se atiende. La guarda de presupuesto solo decide si
+    // alcanza para una segunda o tercera: si se aplicara también a la primera,
+    // la espera de lectura ya habría consumido el presupuesto hasta la reserva
+    // y el bucle saldría sin hacer nada — mudo, sin log ni error.
+    if (i > 0 && restante() < RESERVA_RESPUESTA_MS) {
+      await logWorkflowError({
+        workflow: WORKFLOW,
+        node: 'presupuesto',
+        error: new Error(
+          `Sin tiempo para ${pendientes.length - i} conversación(es) del contacto`,
+        ),
+        context: { contactId: ctx.contactId },
+      });
+      break;
+    }
+    await atenderConversacion(ctx, pendientes[i], restante);
   }
 }
 
