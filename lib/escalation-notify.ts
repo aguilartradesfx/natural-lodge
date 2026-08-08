@@ -27,17 +27,36 @@ export function destinatarios(
     .filter(Boolean);
 }
 
+/**
+ * Nombre del canal para leer, no para depurar. Internamente son `IG` y `FB`;
+ * quien recibe el aviso en el teléfono necesita saber dónde ir a contestar.
+ */
+export function nombreCanal(canal?: string | null): string {
+  const nombres: Record<string, string> = {
+    IG: 'Instagram',
+    FB: 'Facebook',
+    Live_Chat: 'Chat en vivo',
+    GMB: 'Google Business',
+  };
+  if (!canal) return 'canal no identificado';
+  return nombres[canal] ?? canal;
+}
+
 /** Mismo contenido que la plantilla `notificacion_interna` de WhatsApp. */
 export function construirAviso(input: {
   nombre?: string;
   telefono?: string;
   canal?: string | null;
 }): string {
+  const canal = nombreCanal(input.canal);
   return [
-    `Un cliente necesita hablar con un humano en ${input.canal || 'un canal no identificado'}.`,
+    `Un cliente necesita hablar con un humano en ${canal}.`,
     '',
     `Nombre: ${input.nombre?.trim() || 'sin nombre'}`,
     `Teléfono: ${input.telefono?.trim() || 'sin teléfono'}`,
+    // Repetido como campo a propósito: en Instagram y Facebook no hay
+    // teléfono, y el canal es el único dato que dice por dónde contestar.
+    `Canal: ${canal}`,
   ].join('\n');
 }
 
