@@ -14,7 +14,7 @@ vi.mock('@/lib/ghl', () => ({
 
 import * as ghl from '@/lib/ghl';
 import { mapProspect } from './prospect-mapper';
-import { explainGhlError, importProspects } from './prospect-importer';
+import { explainGhlError, importProspects, buildDuplicateRow } from './prospect-importer';
 
 function raw(over: Partial<RawProspect>): RawProspect {
   return {
@@ -53,6 +53,27 @@ describe('explainGhlError', () => {
   });
   it('otro error → devuelve el mensaje crudo', () => {
     expect(explainGhlError('algo raro').hint).toBe('algo raro');
+  });
+});
+
+describe('buildDuplicateRow', () => {
+  it('mismo teléfono con formato distinto (+1 vs guiones): no lo marca como diferente', () => {
+    const [m] = mapped({ phone: '647-404-4155' });
+    // cleanPhone() reescribe el número entrante a E.164; GHL casi nunca lo
+    // tiene guardado así, así que esto reproduce el caso real del hallazgo.
+    expect(m.contact.phone).toBe('+16474044155');
+    const existing = { id: 'x1', phone: '647-404-4155' } as never;
+    const row = buildDuplicateRow(m, existing);
+    expect(row.matchedBy).toBe('phone');
+    expect(row.differingFields).not.toContain('phone');
+  });
+
+  it('teléfono genuinamente distinto: sí lo marca como diferente', () => {
+    const [m] = mapped({ phone: '647-404-4155' });
+    const existing = { id: 'x1', phone: '999-888-7777' } as never;
+    const row = buildDuplicateRow(m, existing);
+    expect(row.matchedBy).not.toBe('phone');
+    expect(row.differingFields).toContain('phone');
   });
 });
 

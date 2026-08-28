@@ -119,7 +119,12 @@ export function buildDuplicateRow(m: MappedProspect, existing: GhlContact): Dupl
     const b = (existing[f] || '').trim();
     incoming[f] = a;
     current[f] = b;
-    if (a && a.toLowerCase() !== b.toLowerCase()) differingFields.push(f);
+    // El teléfono se compara por dígitos: `cleanPhone()` reescribe el número
+    // entrante a formato +1XXXXXXXXXX, que casi nunca es como GHL lo tiene
+    // guardado, así que la comparación textual lo marcaría como "distinto"
+    // aunque sea el mismo número.
+    const differs = f === 'phone' ? digits(a) !== digits(b) : a.toLowerCase() !== b.toLowerCase();
+    if (a && differs) differingFields.push(f);
   }
 
   const sameEmail =
