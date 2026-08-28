@@ -36,6 +36,7 @@ export function ContactImport() {
   const [failedRows, setFailedRows] = useState<FailedRow[]>([]);
   const [retrying, setRetrying] = useState(false);
   const [error, setError] = useState('');
+  const [startSequence, setStartSequence] = useState(false);
 
   async function parseJson(res: Response) {
     const text = await res.text();
@@ -57,6 +58,7 @@ export function ContactImport() {
   async function postFile(f: File, dryRun: boolean) {
     const form = new FormData();
     form.set('file', f);
+    if (!dryRun && startSequence) form.set('startSequence', '1');
     return parseJson(
       await fetch(`/api/contacts/import${dryRun ? '?dryRun=1' : ''}`, { method: 'POST', body: form }),
     );
@@ -207,6 +209,22 @@ export function ContactImport() {
               </table>
             </div>
           </div>
+
+          <label className="glass rounded-2xl p-4 flex items-start gap-3 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={startSequence}
+              onChange={(e) => setStartSequence(e.target.checked)}
+              className="mt-0.5 accent-[--color-green-glow]"
+            />
+            <span className="text-[13px] leading-[1.5]">
+              <span className="font-medium">Iniciar la secuencia de correos con este lote</span>
+              <span className="block text-[12px] text-[--color-cream-mute] mt-1">
+                {preview.metrics.withEmail} de {preview.metrics.total} contactos tienen correo y
+                recibirían el primer mensaje. Los repetidos y los que no tienen correo quedan fuera.
+              </span>
+            </span>
+          </label>
 
           <div className="flex items-center justify-end gap-3">
             <button onClick={reset} className="glass-pill px-4 py-2 rounded-full text-[13px]">
