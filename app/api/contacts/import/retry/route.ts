@@ -11,7 +11,7 @@ export async function POST(req: Request) {
   const auth = await requireUser();
   if (auth.error) return auth.error;
 
-  let body: { batchTag?: string; rows?: RawProspect[] } | null;
+  let body: { batchTag?: string; rows?: RawProspect[]; mode?: 'normal' | 'forceUpdate' } | null;
   try {
     body = await req.json();
   } catch {
@@ -33,6 +33,8 @@ export async function POST(req: Request) {
   } catch {
     return Response.json({ error: 'Filas inválidas' }, { status: 400 });
   }
-  const report = await importProspects(mapped);
+  const report = await importProspects(mapped, {
+    onDuplicate: body?.mode === 'forceUpdate' ? 'update' : 'report',
+  });
   return Response.json({ ok: true, report, batchTag });
 }

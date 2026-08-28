@@ -13,7 +13,7 @@ const ghl = {
   createOpportunity: vi.fn(async () => ({ id: 'o1' })),
   getPipelines: vi.fn(async () => [{ id: 'p1', name: 'Travel Agency Partnerships', stages: [{ id: 's1', name: 'New Prospect' }] }]),
   getCustomFields: vi.fn(async () => [{ id: 'f1', name: 'Lead Score' }]),
-  addContactTags: vi.fn(async () => {}),
+  addContactTags: vi.fn(async (_id: string, _tags: string[]) => {}),
 };
 vi.mock('@/lib/ghl', () => ghl);
 
@@ -24,10 +24,11 @@ vi.mock('@/lib/prospect-summary', () => ({
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
 
-function req(fileName: string, dryRun: boolean): Request {
+function req(fileName: string, dryRun: boolean, startSequence = false): Request {
   const buf = readFileSync(path.resolve(import.meta.dirname, '../../../../tests/fixtures', fileName));
   const form = new FormData();
   form.set('file', new File([buf], fileName));
+  if (startSequence) form.set('startSequence', '1');
   const url = `http://t/api/contacts/import${dryRun ? '?dryRun=1' : ''}`;
   return new Request(url, { method: 'POST', body: form });
 }
@@ -182,5 +183,23 @@ describe('POST /api/contacts/import', () => {
     expect(ghl.createContact).toHaveBeenCalledTimes(20);
     expect(body.report.updated).toBe(0);
     expect(body.report.created).toBe(20);
+  });
+
+  it('sin startSequence no pone la etiqueta que dispara los correos', async () => {
+    const { POST } = await import('./route');
+    await POST(req('prospects.csv', false));
+    const todas = ghl.addContactTags.mock.calls.flatMap((c) => c[1] as string[]);
+    expect(todas).not.toContain('secuencia-prospeccion');
+  });
+
+  it('con startSequence la pone solo en las filas con correo', async () => {
+    const { POST } = await import('./route');
+    await POST(req('prospects.csv', false, true));
+    const conEtiqueta = ghl.addContactTags.mock.calls.filter((c) =>
+      (c[1] as string[]).includes('secuencia-prospeccion'),
+    ).length;
+    // El fixture trae 20 filas y solo 2 con correo.
+    expect(conEtiqueta).toBe(2);
+    expect(ghl.addContactTags.mock.calls.length).toBe(20);
   });
 });

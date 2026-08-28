@@ -27,6 +27,7 @@ export async function POST(req: Request) {
 
   const dryRun =
     new URL(req.url).searchParams.get('dryRun') === '1' || form.get('dryRun') === '1';
+  const startSequence = form.get('startSequence') === '1';
 
   let parsed;
   try {
@@ -63,6 +64,6 @@ export async function POST(req: Request) {
     return Response.json({ ok: true, format, metrics, summary, preview, batchTag });
   }
 
-  const report = await importProspects(mapped);
+  const report = await importProspects(mapped, { startSequence });
   return Response.json({ ok: true, report, batchTag });
 }
