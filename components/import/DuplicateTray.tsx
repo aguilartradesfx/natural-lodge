@@ -39,6 +39,10 @@ export function DuplicateTray({
         {rows.length} {rows.length === 1 ? 'contacto ya existe' : 'contactos ya existen'} en Bralto
         — no se importaron ni recibieron correos
       </div>
+      <div className="text-[12px] text-[--color-cream-mute]">
+        Los que corrijas y reintentes entran como contactos nuevos, pero no reciben la
+        secuencia de correos. Si querés que la reciban, etiquetalos a mano en Bralto.
+      </div>
 
       {rows.map((d) => (
         <div key={d.rowNumber} className="glass rounded-2xl p-4 flex flex-col gap-2.5">
