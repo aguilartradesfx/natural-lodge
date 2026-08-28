@@ -75,7 +75,7 @@ describe('POST /api/contacts/import', () => {
     expect(body.report.created).toBe(19);
   });
 
-  it('dedup por email: contacto existente se actualiza, el resto se crea', async () => {
+  it('dedup por correo: el contacto existente se reporta como duplicado, el resto se crea', async () => {
     ghl.searchContacts.mockResolvedValue([
       {
         id: 'existing-cindy',
@@ -89,18 +89,22 @@ describe('POST /api/contacts/import', () => {
     const { POST } = await import('./route');
     const res = await POST(req('prospects.csv', false));
     const body = await res.json();
-    expect(ghl.updateContact).toHaveBeenCalledTimes(1);
-    expect(ghl.updateContact).toHaveBeenCalledWith('existing-cindy', expect.anything());
+    expect(ghl.updateContact).not.toHaveBeenCalled();
     expect(ghl.createContact).toHaveBeenCalledTimes(19);
-    expect(body.report.updated).toBe(1);
+    expect(body.report.updated).toBe(0);
     expect(body.report.created).toBe(19);
-    expect(body.report.created + body.report.updated + body.report.failed.length).toBe(20);
-    // La fila actualizada no debe generar una nota/oportunidad duplicada.
+    expect(body.report.duplicates).toHaveLength(1);
+    expect(body.report.duplicates[0].existingId).toBe('existing-cindy');
+    expect(body.report.duplicates[0].matchedBy).toBe('email');
+    expect(
+      body.report.created + body.report.updated + body.report.failed.length + body.report.duplicates.length,
+    ).toBe(20);
+    // La fila duplicada no debe generar una nota/oportunidad.
     expect(ghl.createNote).toHaveBeenCalledTimes(19);
     expect(ghl.createOpportunity).toHaveBeenCalledTimes(19);
   });
 
-  it('dedup por teléfono: contacto existente se actualiza, el resto se crea', async () => {
+  it('dedup por teléfono: el contacto existente se reporta como duplicado, el resto se crea', async () => {
     ghl.searchContacts.mockResolvedValue([
       {
         id: 'existing-tricia',
@@ -114,18 +118,22 @@ describe('POST /api/contacts/import', () => {
     const { POST } = await import('./route');
     const res = await POST(req('prospects.csv', false));
     const body = await res.json();
-    expect(ghl.updateContact).toHaveBeenCalledTimes(1);
-    expect(ghl.updateContact).toHaveBeenCalledWith('existing-tricia', expect.anything());
+    expect(ghl.updateContact).not.toHaveBeenCalled();
     expect(ghl.createContact).toHaveBeenCalledTimes(19);
-    expect(body.report.updated).toBe(1);
+    expect(body.report.updated).toBe(0);
     expect(body.report.created).toBe(19);
-    expect(body.report.created + body.report.updated + body.report.failed.length).toBe(20);
-    // La fila actualizada no debe generar una nota/oportunidad duplicada.
+    expect(body.report.duplicates).toHaveLength(1);
+    expect(body.report.duplicates[0].existingId).toBe('existing-tricia');
+    expect(body.report.duplicates[0].matchedBy).toBe('phone');
+    expect(
+      body.report.created + body.report.updated + body.report.failed.length + body.report.duplicates.length,
+    ).toBe(20);
+    // La fila duplicada no debe generar una nota/oportunidad.
     expect(ghl.createNote).toHaveBeenCalledTimes(19);
     expect(ghl.createOpportunity).toHaveBeenCalledTimes(19);
   });
 
-  it('dedup por huella nombre+empresa: contacto existente se actualiza, el resto se crea', async () => {
+  it('dedup por huella nombre+empresa: el contacto existente se reporta como duplicado, el resto se crea', async () => {
     ghl.searchContacts.mockResolvedValue([
       {
         id: 'existing-julio',
@@ -139,13 +147,17 @@ describe('POST /api/contacts/import', () => {
     const { POST } = await import('./route');
     const res = await POST(req('prospects.csv', false));
     const body = await res.json();
-    expect(ghl.updateContact).toHaveBeenCalledTimes(1);
-    expect(ghl.updateContact).toHaveBeenCalledWith('existing-julio', expect.anything());
+    expect(ghl.updateContact).not.toHaveBeenCalled();
     expect(ghl.createContact).toHaveBeenCalledTimes(19);
-    expect(body.report.updated).toBe(1);
+    expect(body.report.updated).toBe(0);
     expect(body.report.created).toBe(19);
-    expect(body.report.created + body.report.updated + body.report.failed.length).toBe(20);
-    // La fila actualizada no debe generar una nota/oportunidad duplicada.
+    expect(body.report.duplicates).toHaveLength(1);
+    expect(body.report.duplicates[0].existingId).toBe('existing-julio');
+    expect(body.report.duplicates[0].matchedBy).toBe('fingerprint');
+    expect(
+      body.report.created + body.report.updated + body.report.failed.length + body.report.duplicates.length,
+    ).toBe(20);
+    // La fila duplicada no debe generar una nota/oportunidad.
     expect(ghl.createNote).toHaveBeenCalledTimes(19);
     expect(ghl.createOpportunity).toHaveBeenCalledTimes(19);
   });
