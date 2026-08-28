@@ -130,6 +130,7 @@ export function ContactImport() {
     setTotals({ created: 0, updated: 0 });
     setFailedRows([]);
     setError('');
+    setStartSequence(false);
   }
 
   return (
