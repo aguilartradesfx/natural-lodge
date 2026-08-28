@@ -2,6 +2,7 @@
 import { useState } from 'react';
 import { Upload, CheckCircle2, AlertTriangle, Loader2, X } from 'lucide-react';
 import type { RawProspect } from '@/lib/prospect-types';
+import { DuplicateTray, type DuplicateRow } from '@/components/import/DuplicateTray';
 
 type PreviewRow = {
   rowNumber: number; name: string; company: string; email: string; phone: string;
@@ -21,7 +22,8 @@ type FailedRow = {
 };
 type Report = {
   created: number; updated: number;
-  failed: FailedRow[]; missingCustomFields: string[]; pipelineResolved: boolean;
+  failed: FailedRow[]; duplicates: DuplicateRow[];
+  missingCustomFields: string[]; pipelineResolved: boolean;
 };
 
 type Phase = 'idle' | 'previewing' | 'preview' | 'importing' | 'done' | 'error';
@@ -34,6 +36,7 @@ export function ContactImport() {
   const [batchTag, setBatchTag] = useState('');
   const [totals, setTotals] = useState({ created: 0, updated: 0 });
   const [failedRows, setFailedRows] = useState<FailedRow[]>([]);
+  const [duplicateRows, setDuplicateRows] = useState<DuplicateRow[]>([]);
   const [retrying, setRetrying] = useState(false);
   const [error, setError] = useState('');
   const [startSequence, setStartSequence] = useState(false);
@@ -87,6 +90,7 @@ export function ContactImport() {
       setBatchTag(body.batchTag);
       setTotals({ created: body.report.created, updated: body.report.updated });
       setFailedRows(body.report.failed);
+      setDuplicateRows(body.report.duplicates ?? []);
       setPhase('done');
     } catch (e) {
       setError((e as Error).message);
@@ -121,6 +125,57 @@ export function ContactImport() {
     }
   }
 
+  function discardDuplicate(rowNumber: number) {
+    setDuplicateRows((rows) => rows.filter((r) => r.rowNumber !== rowNumber));
+  }
+
+  function editDuplicate(rowNumber: number, patch: { email?: string; phone?: string }) {
+    setDuplicateRows((rows) =>
+      rows.map((r) => (r.rowNumber === rowNumber ? { ...r, raw: { ...r.raw, ...patch } } : r)),
+    );
+  }
+
+  /** Reenvía la fila corregida en modo normal: si ya no choca, se crea. */
+  async function retryFixedDuplicate(row: DuplicateRow) {
+    await sendDuplicate(row, 'normal');
+  }
+
+  async function importAnyway(row: DuplicateRow) {
+    await sendDuplicate(row, 'forceUpdate');
+  }
+
+  /** Único camino al servidor para las dos acciones de la bandeja de duplicados. */
+  async function sendDuplicate(row: DuplicateRow, mode: 'normal' | 'forceUpdate') {
+    setRetrying(true);
+    setError('');
+    try {
+      const res = await fetch('/api/contacts/import/retry', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ batchTag, rows: [row.raw], mode }),
+      });
+      const body = (await parseJson(res)) as { report: Report };
+      setTotals((t) => ({ created: t.created + body.report.created, updated: t.updated + body.report.updated }));
+      if (body.report.failed.length) {
+        setFailedRows((f) => [...f, ...body.report.failed]);
+      }
+      // Si sigue chocando en modo normal, vuelve como duplicado: se queda en la
+      // bandeja con los datos frescos en vez de desaparecer sin explicación.
+      const sigueDuplicada = (body.report.duplicates ?? []).find(
+        (d) => d.rowNumber === row.rowNumber,
+      );
+      setDuplicateRows((rows) =>
+        sigueDuplicada
+          ? rows.map((r) => (r.rowNumber === row.rowNumber ? sigueDuplicada : r))
+          : rows.filter((r) => r.rowNumber !== row.rowNumber),
+      );
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setRetrying(false);
+    }
+  }
+
   function reset() {
     setPhase('idle');
     setFile(null);
@@ -129,6 +184,7 @@ export function ContactImport() {
     setBatchTag('');
     setTotals({ created: 0, updated: 0 });
     setFailedRows([]);
+    setDuplicateRows([]);
     setError('');
     setStartSequence(false);
   }
@@ -261,6 +317,7 @@ export function ContactImport() {
               <div className="text-[13px] text-[--color-cream-mute] mt-1">
                 {totals.created} creados · {totals.updated} ya existían y se actualizaron
                 {failedRows.length > 0 && ` · ${failedRows.length} con error`}
+                {duplicateRows.length > 0 && ` · ${duplicateRows.length} ya existían`}
               </div>
               {!report.pipelineResolved && (
                 <div className="text-[12px] text-amber-300 mt-2">
@@ -274,6 +331,15 @@ export function ContactImport() {
               )}
             </div>
           </div>
+
+          <DuplicateTray
+            rows={duplicateRows}
+            busy={retrying}
+            onEdit={editDuplicate}
+            onRetryFixed={retryFixedDuplicate}
+            onDiscard={discardDuplicate}
+            onImportAnyway={importAnyway}
+          />
 
           {failedRows.length > 0 && (
             <div className="flex flex-col gap-3">
