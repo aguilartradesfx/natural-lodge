@@ -36,7 +36,12 @@ function req(body: unknown): Request {
   });
 }
 
-beforeEach(() => Object.values(ghl).forEach((f) => f.mockClear?.()));
+beforeEach(() => {
+  Object.values(ghl).forEach((f) => f.mockClear?.());
+  // Reset return values that individual tests may override, so nothing bleeds
+  // into the next test (mockClear() only resets call history, not implementation).
+  ghl.searchContacts.mockResolvedValue([]);
+});
 
 describe('POST /api/contacts/import/retry', () => {
   it('rechaza body sin filas', async () => {
