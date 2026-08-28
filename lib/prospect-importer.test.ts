@@ -64,14 +64,35 @@ describe('importProspects', () => {
     expect(ghl.createContact).toHaveBeenCalledTimes(1);
   });
 
-  it('actualiza cuando ya existe (por correo)', async () => {
+  it('actualiza cuando ya existe y se pide explícitamente', async () => {
+    vi.mocked(ghl.searchContacts).mockResolvedValue([{ id: 'x1', email: 'a@b.com' }] as never);
+    const r = await importProspects(mapped({ email: 'a@b.com' }), { onDuplicate: 'update' });
+    expect(ghl.updateContact).toHaveBeenCalled();
+    expect(r.updated).toBe(1);
+  });
+
+  it('no sobrescribe cuando ya existe: lo reporta como duplicado', async () => {
     vi.mocked(ghl.searchContacts).mockResolvedValue([
-      { id: 'exist', email: 'ana@x.com' } as never,
-    ]);
-    const rep = await importProspects(mapped({ email: 'ana@x.com' }));
-    expect(rep.updated).toBe(1);
-    expect(rep.created).toBe(0);
-    expect(ghl.updateContact).toHaveBeenCalledWith('exist', expect.anything());
+      { id: 'x1', email: 'a@b.com', firstName: 'Ana', lastName: 'Pérez', companyName: 'Otra Empresa' },
+    ] as never);
+    const r = await importProspects(mapped({ email: 'a@b.com' }));
+    expect(ghl.updateContact).not.toHaveBeenCalled();
+    expect(ghl.createContact).not.toHaveBeenCalled();
+    expect(r.updated).toBe(0);
+    expect(r.duplicates).toHaveLength(1);
+    expect(r.duplicates[0].existingId).toBe('x1');
+    expect(r.duplicates[0].matchedBy).toBe('email');
+    expect(r.duplicates[0].differingFields).toContain('companyName');
+    expect(r.duplicates[0].differingFields).not.toContain('email');
+  });
+
+  it('si la búsqueda de duplicados falla, la fila no se crea: cae en failed', async () => {
+    vi.mocked(ghl.searchContacts).mockRejectedValue(new Error('GHL 403 rate limit'));
+    const r = await importProspects(mapped({ email: 'a@b.com' }));
+    expect(ghl.createContact).not.toHaveBeenCalled();
+    expect(r.created).toBe(0);
+    expect(r.failed).toHaveLength(1);
+    expect(r.failed[0].rowNumber).toBe(1);
   });
 
   it('un fallo por fila no aborta y enriquece la fila con pista + raw', async () => {

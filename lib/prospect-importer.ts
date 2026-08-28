@@ -16,10 +16,30 @@ export type FailedRow = {
   raw: RawProspect;
 };
 
+export type DuplicateRow = {
+  rowNumber: number;
+  name: string;
+  company: string;
+  matchedBy: 'email' | 'phone' | 'fingerprint';
+  existingId: string;
+  incoming: Record<string, string>;
+  existing: Record<string, string>;
+  differingFields: string[];
+  raw: RawProspect;
+};
+
+export type ImportOptions = {
+  /** Agrega `secuencia-prospeccion` a las filas nuevas con correo. */
+  startSequence?: boolean;
+  /** 'report' (default) no escribe nada; 'update' actualiza y marca para revisión. */
+  onDuplicate?: 'report' | 'update';
+};
+
 export type ImportReport = {
   created: number;
   updated: number;
   failed: FailedRow[];
+  duplicates: DuplicateRow[];
   missingCustomFields: string[];
   pipelineResolved: boolean;
 };
@@ -85,12 +105,53 @@ export async function findExisting(m: MappedProspect): Promise<GhlContact | null
   );
 }
 
+const COMPARABLE = ['firstName', 'lastName', 'companyName', 'email', 'phone'] as const;
+const digits = (s: string) => s.replace(/\D/g, '').slice(-10);
+
+/** Arma la fila de revisión comparando el archivo contra lo que hay en GHL. */
+export function buildDuplicateRow(m: MappedProspect, existing: GhlContact): DuplicateRow {
+  const incoming: Record<string, string> = {};
+  const current: Record<string, string> = {};
+  const differingFields: string[] = [];
+
+  for (const f of COMPARABLE) {
+    const a = (m.contact[f] || '').trim();
+    const b = (existing[f] || '').trim();
+    incoming[f] = a;
+    current[f] = b;
+    if (a && a.toLowerCase() !== b.toLowerCase()) differingFields.push(f);
+  }
+
+  const sameEmail =
+    Boolean(m.contact.email) &&
+    (existing.email || '').toLowerCase() === m.contact.email.toLowerCase();
+  const samePhone =
+    Boolean(m.contact.phone) && digits(existing.phone || '') === digits(m.contact.phone);
+
+  return {
+    rowNumber: m.raw.rowNumber,
+    name: m.contact.name,
+    company: m.contact.companyName,
+    matchedBy: sameEmail ? 'email' : samePhone ? 'phone' : 'fingerprint',
+    existingId: existing.id,
+    incoming,
+    existing: current,
+    differingFields,
+    raw: m.raw,
+  };
+}
+
 /** Motor de importación: crea/actualiza cada prospecto en GHL y arma el reporte. */
-export async function importProspects(mapped: MappedProspect[]): Promise<ImportReport> {
+export async function importProspects(
+  mapped: MappedProspect[],
+  options: ImportOptions = {},
+): Promise<ImportReport> {
+  const onDuplicate = options.onDuplicate ?? 'report';
   const report: ImportReport = {
     created: 0,
     updated: 0,
     failed: [],
+    duplicates: [],
     missingCustomFields: [],
     pipelineResolved: false,
   };
@@ -137,6 +198,11 @@ export async function importProspects(mapped: MappedProspect[]): Promise<ImportR
       const fields = { ...m.contact, customFields: resolvedCF };
 
       const existing = await findExisting(m);
+      if (existing && onDuplicate === 'report') {
+        report.duplicates.push(buildDuplicateRow(m, existing));
+        continue;
+      }
+
       let contactId: string;
       let outcome: 'created' | 'updated';
       if (existing) {
