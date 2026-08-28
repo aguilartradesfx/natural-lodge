@@ -221,8 +221,10 @@ export function ContactImport() {
             <span className="text-[13px] leading-[1.5]">
               <span className="font-medium">Iniciar la secuencia de correos con este lote</span>
               <span className="block text-[12px] text-[--color-cream-mute] mt-1">
-                {preview.metrics.withEmail} de {preview.metrics.total} contactos tienen correo y
-                recibirían el primer mensaje. Los repetidos y los que no tienen correo quedan fuera.
+                Hasta {preview.metrics.withEmail} de {preview.metrics.total} contactos podrían
+                recibir el primer mensaje. Los que no tienen correo quedan fuera, y los que ya
+                existan en Bralto se descuentan al importar, así que el número final puede ser
+                menor.
               </span>
             </span>
           </label>
