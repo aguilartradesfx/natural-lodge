@@ -44,6 +44,11 @@ export type ImportReport = {
   pipelineResolved: boolean;
 };
 
+/** Etiqueta que dispara el workflow "Prospección · Secuencia de 4 correos" en GHL. */
+export const SEQUENCE_TAG = 'secuencia-prospeccion';
+/** Etiqueta de cuarentena: dispara "Prospección · Duplicados por revisar". */
+export const DUPLICATE_TAG = 'duplicado-revisar';
+
 /** Traduce el error crudo de GHL a una pista accionable en español. */
 export function explainGhlError(reason: string): { hint: string; matchingField?: 'phone' | 'email' } {
   let parsed: { message?: string; meta?: { matchingField?: string } } | null = null;
@@ -220,7 +225,13 @@ export async function importProspects(
         outcome = 'created';
       }
 
-      if (m.tags.length) await addContactTags(contactId, m.tags);
+      const tags = [...m.tags];
+      if (outcome === 'updated') {
+        tags.push(DUPLICATE_TAG);
+      } else if (options.startSequence && m.contact.email) {
+        tags.push(SEQUENCE_TAG);
+      }
+      if (tags.length) await addContactTags(contactId, tags);
       if (outcome === 'created') {
         if (m.note) await createNote(contactId, m.note);
         if (report.pipelineResolved) {

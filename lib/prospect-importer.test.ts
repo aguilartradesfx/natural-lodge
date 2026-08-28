@@ -129,3 +129,32 @@ describe('importProspects', () => {
     expect(rep.failed[0].raw.email).toBe('ana@x.com');
   });
 });
+
+describe('reglas de etiquetado', () => {
+  const tagsUsados = () => vi.mocked(ghl.addContactTags).mock.calls[0][1];
+
+  it('fila nueva con correo y startSequence → lleva la etiqueta de secuencia', async () => {
+    await importProspects(mapped({ email: 'a@b.com' }), { startSequence: true });
+    expect(tagsUsados()).toContain('secuencia-prospeccion');
+  });
+
+  it('fila nueva con correo sin startSequence → no la lleva', async () => {
+    await importProspects(mapped({ email: 'a@b.com' }));
+    expect(tagsUsados()).not.toContain('secuencia-prospeccion');
+  });
+
+  it('fila SIN correo con startSequence → no la lleva', async () => {
+    await importProspects(mapped({ email: '', phone: '+50688881111' }), { startSequence: true });
+    expect(tagsUsados()).not.toContain('secuencia-prospeccion');
+  });
+
+  it('duplicado con onDuplicate update → lleva duplicado-revisar y NO la de secuencia', async () => {
+    vi.mocked(ghl.searchContacts).mockResolvedValue([{ id: 'x1', email: 'a@b.com' }] as never);
+    await importProspects(mapped({ email: 'a@b.com' }), {
+      startSequence: true,
+      onDuplicate: 'update',
+    });
+    expect(tagsUsados()).toContain('duplicado-revisar');
+    expect(tagsUsados()).not.toContain('secuencia-prospeccion');
+  });
+});
