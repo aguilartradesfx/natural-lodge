@@ -34,3 +34,21 @@ export type RawProspect = {
   /** Fila de datos 1-based (para el reporte). */
   rowNumber: number;
 };
+
+/**
+ * Fila que ya existe en GHL y espera decisión humana en la bandeja de revisión.
+ * Vive acá —y no en el importador— para que el cliente pueda importar el tipo
+ * sin arrastrar `server-only`. `import type` se borra al compilar, pero mantener
+ * el tipo en un módulo neutral evita que un import de valor lo rompa después.
+ */
+export type DuplicateRow = {
+  rowNumber: number;
+  name: string;
+  company: string;
+  matchedBy: 'email' | 'phone' | 'fingerprint';
+  existingId: string;
+  incoming: Record<string, string>;   // lo que trae el archivo
+  existing: Record<string, string>;   // lo que hay en GHL
+  differingFields: string[];          // solo los que no coinciden
+  raw: RawProspect;
+};

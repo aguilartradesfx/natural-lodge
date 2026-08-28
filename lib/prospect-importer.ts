@@ -5,7 +5,9 @@ import {
 } from '@/lib/ghl';
 import { DEFAULT_PIPELINE, DEFAULT_STAGE } from '@/lib/prospect-parser';
 import { contactFingerprint, type MappedProspect } from '@/lib/prospect-mapper';
-import type { RawProspect } from '@/lib/prospect-types';
+import type { DuplicateRow, RawProspect } from '@/lib/prospect-types';
+
+export type { DuplicateRow };
 
 export type FailedRow = {
   rowNumber: number;
@@ -13,18 +15,6 @@ export type FailedRow = {
   reason: string;
   hint: string;
   matchingField?: 'phone' | 'email';
-  raw: RawProspect;
-};
-
-export type DuplicateRow = {
-  rowNumber: number;
-  name: string;
-  company: string;
-  matchedBy: 'email' | 'phone' | 'fingerprint';
-  existingId: string;
-  incoming: Record<string, string>;
-  existing: Record<string, string>;
-  differingFields: string[];
   raw: RawProspect;
 };
 
@@ -48,6 +38,15 @@ export type ImportReport = {
 export const SEQUENCE_TAG = 'secuencia-prospeccion';
 /** Etiqueta de cuarentena: dispara "Prospección · Duplicados por revisar". */
 export const DUPLICATE_TAG = 'duplicado-revisar';
+
+/**
+ * Etiquetas que disparan workflows en GHL y que por lo tanto NO pueden venir del
+ * archivo ni del `batchTag` que manda el cliente: si se colaran, una fila sin
+ * correo, ya existente o con la casilla desmarcada entraría igual a la secuencia
+ * de correos en frío. Solo este módulo las pone, y solo bajo las reglas de §5.
+ * Ambas constantes son minúsculas, así que la comparación se hace en minúsculas.
+ */
+const RESERVED_TAGS = new Set<string>([SEQUENCE_TAG, DUPLICATE_TAG]);
 
 /** Traduce el error crudo de GHL a una pista accionable en español. */
 export function explainGhlError(reason: string): { hint: string; matchingField?: 'phone' | 'email' } {
@@ -225,8 +224,14 @@ export async function importProspects(
         outcome = 'created';
       }
 
-      const tags = [...m.tags];
-      if (outcome === 'updated') {
+      // Las etiquetas del archivo (y el batchTag) pasan por el filtro: nada que
+      // dispare un workflow puede entrar por ahí.
+      const tags = m.tags.filter((t) => !RESERVED_TAGS.has(t.trim().toLowerCase()));
+      // Se etiqueta por INTENCIÓN, no por resultado: si el usuario pidió
+      // "Importar de todos modos" sobre una fila marcada como duplicada, va a
+      // cuarentena aunque el contacto ya no coincida (lo editó, o lo borraron
+      // de GHL entre la importación y el clic). Nunca correos en ese camino.
+      if (onDuplicate === 'update') {
         tags.push(DUPLICATE_TAG);
       } else if (options.startSequence && m.contact.email) {
         tags.push(SEQUENCE_TAG);

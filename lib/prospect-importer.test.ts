@@ -99,6 +99,9 @@ describe('importProspects', () => {
     const r = await importProspects(mapped({ email: 'a@b.com' }));
     expect(ghl.updateContact).not.toHaveBeenCalled();
     expect(ghl.createContact).not.toHaveBeenCalled();
+    // Si el `continue` se moviera debajo del armado de etiquetas, un cliente que
+    // ya existe empezaría a recibirlas sin que ninguna otra prueba se queje.
+    expect(ghl.addContactTags).not.toHaveBeenCalled();
     expect(r.updated).toBe(0);
     expect(r.duplicates).toHaveLength(1);
     expect(r.duplicates[0].existingId).toBe('x1');
@@ -148,6 +151,12 @@ describe('reglas de etiquetado', () => {
     expect(tagsUsados()).not.toContain('secuencia-prospeccion');
   });
 
+  it('fila sin correo NI teléfono con startSequence → Contacto-Pendiente y NO la de secuencia', async () => {
+    await importProspects(mapped({ email: '', phone: '' }), { startSequence: true });
+    expect(tagsUsados()).toContain('Contacto-Pendiente');
+    expect(tagsUsados()).not.toContain('secuencia-prospeccion');
+  });
+
   it('duplicado con onDuplicate update → lleva duplicado-revisar y NO la de secuencia', async () => {
     vi.mocked(ghl.searchContacts).mockResolvedValue([{ id: 'x1', email: 'a@b.com' }] as never);
     await importProspects(mapped({ email: 'a@b.com' }), {
@@ -156,5 +165,65 @@ describe('reglas de etiquetado', () => {
     });
     expect(tagsUsados()).toContain('duplicado-revisar');
     expect(tagsUsados()).not.toContain('secuencia-prospeccion');
+  });
+
+  // El operador puede corregir el correo en la bandeja y luego pulsar "Importar de
+  // todos modos": `findExisting` ya no encuentra nada y la fila se crea. Se
+  // etiqueta por intención, así que igual cae en cuarentena y nunca en la secuencia.
+  it('onDuplicate update sobre una fila que YA NO coincide → igual va a cuarentena', async () => {
+    vi.mocked(ghl.searchContacts).mockResolvedValue([]);
+    const r = await importProspects(mapped({ email: 'corregido@x.com' }), {
+      startSequence: true,
+      onDuplicate: 'update',
+    });
+    expect(r.created).toBe(1);
+    expect(ghl.createContact).toHaveBeenCalledTimes(1);
+    expect(tagsUsados()).toContain('duplicado-revisar');
+    expect(tagsUsados()).not.toContain('secuencia-prospeccion');
+  });
+});
+
+// El archivo del cliente trae una columna "Tags" con 9 etiquetas por fila, y el
+// `batchTag` del cuerpo de /retry tampoco está validado: si `secuencia-prospeccion`
+// se pudiera colar por ahí, las tres compuertas del diseño se saltarían de una.
+describe('etiquetas reservadas inyectadas desde el archivo', () => {
+  const tagsUsados = () => vi.mocked(ghl.addContactTags).mock.calls[0][1];
+
+  it('fila nueva con correo y la casilla DESMARCADA → se ignora la etiqueta del archivo', async () => {
+    await importProspects(mapped({ email: 'a@b.com', tagsRaw: 'secuencia-prospeccion' }));
+    expect(tagsUsados()).not.toContain('secuencia-prospeccion');
+  });
+
+  it('fila SIN correo con startSequence → se ignora la etiqueta del archivo', async () => {
+    await importProspects(
+      mapped({ email: '', phone: '+50688881111', tagsRaw: 'secuencia-prospeccion' }),
+      { startSequence: true },
+    );
+    expect(tagsUsados()).not.toContain('secuencia-prospeccion');
+  });
+
+  it('contacto EXISTENTE forzado con update → solo duplicado-revisar, nunca la de secuencia', async () => {
+    vi.mocked(ghl.searchContacts).mockResolvedValue([{ id: 'x1', email: 'a@b.com' }] as never);
+    await importProspects(mapped({ email: 'a@b.com', tagsRaw: 'secuencia-prospeccion' }), {
+      onDuplicate: 'update',
+    });
+    expect(tagsUsados()).toContain('duplicado-revisar');
+    expect(tagsUsados()).not.toContain('secuencia-prospeccion');
+  });
+
+  it('el filtro no distingue mayúsculas ni espacios, y deja pasar las etiquetas normales', async () => {
+    await importProspects(
+      mapped({ email: 'a@b.com', tagsRaw: '  Secuencia-Prospeccion , DUPLICADO-REVISAR , Toronto ' }),
+      { startSequence: true },
+    );
+    const t = tagsUsados();
+    expect(t.filter((x) => x.toLowerCase() === 'secuencia-prospeccion')).toHaveLength(1);
+    // La única que queda es la que puso el importador, no la del archivo.
+    expect(t).toContain('secuencia-prospeccion');
+    expect(t).not.toContain('Secuencia-Prospeccion');
+    expect(t).not.toContain('duplicado-revisar');
+    expect(t).not.toContain('DUPLICADO-REVISAR');
+    expect(t).toContain('Toronto');
+    expect(t).toContain('Import-x');
   });
 });
