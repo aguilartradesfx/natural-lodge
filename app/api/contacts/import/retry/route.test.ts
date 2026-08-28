@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import type { GhlContact } from '@/lib/ghl';
 import type { RawProspect } from '@/lib/prospect-types';
 
 vi.mock('@/lib/api-auth', () => ({
@@ -6,7 +7,7 @@ vi.mock('@/lib/api-auth', () => ({
 }));
 
 const ghl = {
-  searchContacts: vi.fn(async () => []),
+  searchContacts: vi.fn(async (): Promise<GhlContact[]> => []),
   createContact: vi.fn(async () => ({ id: 'c1' })),
   updateContact: vi.fn(async () => ({ id: 'c1' })),
   createNote: vi.fn(async () => {}),
@@ -77,5 +78,63 @@ describe('POST /api/contacts/import/retry', () => {
     const { POST } = await import('./route');
     const res = await POST(req({ batchTag: 'x', rows: [{ firstName: 'X' }] } as never));
     expect(res.status).toBe(400);
+  });
+
+  it('mode "forceUpdate" actualiza el contacto duplicado y no lo reporta', async () => {
+    ghl.searchContacts.mockResolvedValue([
+      {
+        id: 'existing-ana',
+        email: 'ana@x.com',
+        phone: '',
+        firstName: 'Ana',
+        lastName: 'Pérez',
+        companyName: 'Viajes X',
+      },
+    ]);
+    const { POST } = await import('./route');
+    const res = await POST(
+      req({ batchTag: 'x', rows: [raw({ email: 'ana@x.com' })], mode: 'forceUpdate' }),
+    );
+    const body = await res.json();
+    expect(ghl.updateContact).toHaveBeenCalledTimes(1);
+    expect(body.report.duplicates).toHaveLength(0);
+  });
+
+  it('sin mode NO actualiza el contacto duplicado y lo reporta (default seguro)', async () => {
+    ghl.searchContacts.mockResolvedValue([
+      {
+        id: 'existing-ana',
+        email: 'ana@x.com',
+        phone: '',
+        firstName: 'Ana',
+        lastName: 'Pérez',
+        companyName: 'Viajes X',
+      },
+    ]);
+    const { POST } = await import('./route');
+    const res = await POST(req({ batchTag: 'x', rows: [raw({ email: 'ana@x.com' })] }));
+    const body = await res.json();
+    expect(ghl.updateContact).not.toHaveBeenCalled();
+    expect(body.report.duplicates).toHaveLength(1);
+  });
+
+  it('mode "normal" tampoco actualiza el contacto duplicado y lo reporta', async () => {
+    ghl.searchContacts.mockResolvedValue([
+      {
+        id: 'existing-ana',
+        email: 'ana@x.com',
+        phone: '',
+        firstName: 'Ana',
+        lastName: 'Pérez',
+        companyName: 'Viajes X',
+      },
+    ]);
+    const { POST } = await import('./route');
+    const res = await POST(
+      req({ batchTag: 'x', rows: [raw({ email: 'ana@x.com' })], mode: 'normal' }),
+    );
+    const body = await res.json();
+    expect(ghl.updateContact).not.toHaveBeenCalled();
+    expect(body.report.duplicates).toHaveLength(1);
   });
 });
