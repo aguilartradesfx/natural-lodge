@@ -1,8 +1,8 @@
 'use client';
 import { useState } from 'react';
 import { Upload, CheckCircle2, AlertTriangle, Loader2, X } from 'lucide-react';
-import type { RawProspect } from '@/lib/prospect-types';
-import { DuplicateTray, type DuplicateRow } from '@/components/import/DuplicateTray';
+import type { DuplicateRow, RawProspect } from '@/lib/prospect-types';
+import { DuplicateTray } from '@/components/import/DuplicateTray';
 
 type PreviewRow = {
   rowNumber: number; name: string; company: string; email: string; phone: string;
@@ -118,6 +118,13 @@ export function ContactImport() {
         updated: t.updated + body.report.updated,
       }));
       setFailedRows(body.report.failed);
+      // Una fila que rebotó puede resolverse como "ya existe" al reintentar: si no
+      // la pasamos a la bandeja de duplicados, la tarjeta desaparece y el usuario
+      // cree que se importó.
+      setDuplicateRows((rows) => [
+        ...rows,
+        ...(body.report.duplicates ?? []).filter((d) => !rows.some((r) => r.rowNumber === d.rowNumber)),
+      ]);
     } catch (e) {
       setError((e as Error).message);
     } finally {
@@ -293,7 +300,9 @@ export function ContactImport() {
               onClick={confirm}
               className="px-5 py-2 rounded-full text-[13px] font-medium text-[--color-green-glow] glass-pill"
             >
-              Confirmar e importar {preview.metrics.total}
+              {startSequence
+                ? `Confirmar e importar ${preview.metrics.total} · enviar correos a ${preview.metrics.withEmail}`
+                : `Confirmar e importar ${preview.metrics.total}`}
             </button>
           </div>
         </div>
@@ -315,9 +324,10 @@ export function ContactImport() {
                 {failedRows.length === 0 ? '¡Todo cargado!' : 'Importación completa'}
               </div>
               <div className="text-[13px] text-[--color-cream-mute] mt-1">
-                {totals.created} creados · {totals.updated} ya existían y se actualizaron
+                {totals.created} creados
+                {totals.updated > 0 && ` · ${totals.updated} ya existían y se actualizaron`}
                 {failedRows.length > 0 && ` · ${failedRows.length} con error`}
-                {duplicateRows.length > 0 && ` · ${duplicateRows.length} ya existían`}
+                {duplicateRows.length > 0 && ` · ${duplicateRows.length} por revisar`}
               </div>
               {!report.pipelineResolved && (
                 <div className="text-[12px] text-amber-300 mt-2">
@@ -352,6 +362,10 @@ export function ContactImport() {
                 >
                   {retrying ? 'Reintentando…' : `Reintentar (${failedRows.length})`}
                 </button>
+              </div>
+              <div className="text-[12px] text-[--color-cream-mute]">
+                Los que corrijas y reintentes entran como contactos nuevos, pero no reciben la
+                secuencia de correos. Si querés que la reciban, etiquetalos a mano en Bralto.
               </div>
 
               {failedRows.map((f, idx) => (

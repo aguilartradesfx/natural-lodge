@@ -1,16 +1,6 @@
 'use client';
 import { AlertTriangle, Trash2, ArrowRight } from 'lucide-react';
-import type { RawProspect } from '@/lib/prospect-types';
-
-export type DuplicateRow = {
-  rowNumber: number; name: string; company: string;
-  matchedBy: 'email' | 'phone' | 'fingerprint';
-  existingId: string;
-  incoming: Record<string, string>;
-  existing: Record<string, string>;
-  differingFields: string[];
-  raw: RawProspect;
-};
+import type { DuplicateRow } from '@/lib/prospect-types';
 
 const ETIQUETA: Record<string, string> = {
   firstName: 'Nombre', lastName: 'Apellido', companyName: 'Empresa',
@@ -73,6 +63,11 @@ export function DuplicateTray({
               Los datos del archivo coinciden con los de Bralto.
             </div>
           )}
+          <div className="text-[12px] text-[--color-cream-mute]">
+            La comparación cubre solo nombre, apellido, empresa, correo y teléfono. Si importás
+            de todos modos también se sobrescriben sitio web, ciudad, provincia, país, origen y
+            los campos personalizados.
+          </div>
 
           <div className="flex flex-col sm:flex-row gap-2.5">
             <label className="flex-1 text-[12px] text-[--color-cream-mute]">
