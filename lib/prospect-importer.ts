@@ -50,7 +50,7 @@ const RESERVED_TAGS = new Set<string>([SEQUENCE_TAG, DUPLICATE_TAG]);
 
 /** Traduce el error crudo de GHL a una pista accionable en español. */
 export function explainGhlError(reason: string): { hint: string; matchingField?: 'phone' | 'email' } {
-  let parsed: { message?: string; meta?: { matchingField?: string } } | null = null;
+  let parsed: { message?: unknown; meta?: { matchingField?: string } } | null = null;
   const brace = reason.indexOf('{');
   if (brace >= 0) {
     try {
@@ -59,7 +59,18 @@ export function explainGhlError(reason: string): { hint: string; matchingField?:
       parsed = null;
     }
   }
-  const message = (parsed?.message || reason).toLowerCase();
+  // GHL corre sobre NestJS, que devuelve los errores de validación como ARREGLO
+  // de strings (`{"message":["email must be an email", …]}`), no como string.
+  // Dar por hecho que era string reventaba acá con "toLowerCase is not a
+  // function" — y como esto se llama DENTRO del catch del bucle, el fallo de una
+  // sola fila se convertía en un 500 de toda la importación.
+  const raw = parsed?.message;
+  const detail = Array.isArray(raw)
+    ? raw.filter((x): x is string => typeof x === 'string').join(' · ')
+    : typeof raw === 'string'
+      ? raw
+      : '';
+  const message = (detail || reason).toLowerCase();
   const matchingField = parsed?.meta?.matchingField;
   if (message.includes('duplicated')) {
     if (matchingField === 'email') {
@@ -73,7 +84,9 @@ export function explainGhlError(reason: string): { hint: string; matchingField?:
   if (message.includes('too long') && message.includes('phone')) {
     return { hint: 'El teléfono no es válido. Corrígelo o quítalo.' };
   }
-  return { hint: reason };
+  // Preferimos el detalle que mandó GHL sobre el string crudo: el crudo trae el
+  // JSON completo, que en pantalla no le dice nada a quien tiene que corregir.
+  return { hint: detail || reason };
 }
 
 /** Busca un contacto ya existente para evitar duplicados. */
@@ -247,8 +260,17 @@ export async function importProspects(
       if (outcome === 'created') report.created++;
       else report.updated++;
     } catch (e) {
-      const reason = (e as Error).message;
-      const { hint, matchingField } = explainGhlError(reason);
+      // Defensa en profundidad: el fallo de UNA fila tiene que quedarse en esa
+      // fila. Si lanzar no fue un Error, o si explicarlo revienta, igual se
+      // reporta la fila y las demás se siguen importando — nunca un 500.
+      const reason = e instanceof Error ? e.message : String(e);
+      let hint = reason;
+      let matchingField: 'phone' | 'email' | undefined;
+      try {
+        ({ hint, matchingField } = explainGhlError(reason));
+      } catch {
+        /* explicar el error jamás puede tumbar la importación */
+      }
       report.failed.push({
         rowNumber: m.raw.rowNumber,
         name: m.contact.name,

@@ -54,6 +54,27 @@ describe('explainGhlError', () => {
   it('otro error → devuelve el mensaje crudo', () => {
     expect(explainGhlError('algo raro').hint).toBe('algo raro');
   });
+  // GHL corre sobre NestJS, que devuelve los errores de validación como ARREGLO
+  // de strings, no como string. Asumir string reventaba el manejador de errores
+  // con "(...).toLowerCase is not a function" y tumbaba la importación entera.
+  it('mensaje como arreglo (validación de NestJS) → no revienta y junta las causas', () => {
+    const r = explainGhlError(
+      'GHL 422 en /contacts/: {"statusCode":422,"message":["email must be an email","phone must be a valid phone number"]}',
+    );
+    expect(r.hint).toContain('email must be an email');
+    expect(r.hint).toContain('phone must be a valid phone number');
+  });
+  it('mensaje como arreglo que además es un duplicado → sigue detectando el campo', () => {
+    const r = explainGhlError(
+      'GHL 400: {"message":["This location does not allow duplicated contacts."],"meta":{"matchingField":"email"}}',
+    );
+    expect(r.matchingField).toBe('email');
+    expect(r.hint).toContain('correo');
+  });
+  it('mensaje de tipo inesperado (objeto) → cae al mensaje crudo sin reventar', () => {
+    const r = explainGhlError('GHL 500: {"message":{"nested":"cosa"}}');
+    expect(r.hint).toBeTruthy();
+  });
 });
 
 describe('buildDuplicateRow', () => {
@@ -117,6 +138,27 @@ describe('importProspects', () => {
     expect(r.created).toBe(0);
     expect(r.failed).toHaveLength(1);
     expect(r.failed[0].rowNumber).toBe(1);
+  });
+
+  // Regresión del 500 en producción (2026-09-02): GHL devolvió un error de
+  // validación con `message` como arreglo, explainGhlError reventó DENTRO del
+  // catch, y el fallo de una fila tumbó la importación completa.
+  it('error de validación de GHL con mensaje en arreglo → la fila falla, la importación no', async () => {
+    vi.mocked(ghl.createContact).mockRejectedValueOnce(
+      new Error('GHL 422 en /contacts/: {"statusCode":422,"message":["email must be an email"]}'),
+    );
+    const rep = await importProspects(mapped({ email: 'no-es-correo', rowNumber: 3 }));
+    expect(rep.failed).toHaveLength(1);
+    expect(rep.failed[0].rowNumber).toBe(3);
+    expect(rep.failed[0].hint).toContain('email must be an email');
+    expect(rep.created).toBe(0);
+  });
+
+  it('si lo lanzado no es un Error, la fila se reporta igual', async () => {
+    vi.mocked(ghl.createContact).mockRejectedValueOnce('se cayó la red');
+    const rep = await importProspects(mapped({ email: 'a@b.com', rowNumber: 4 }));
+    expect(rep.failed).toHaveLength(1);
+    expect(rep.failed[0].reason).toContain('se cayó la red');
   });
 
   it('un fallo por fila no aborta y enriquece la fila con pista + raw', async () => {
