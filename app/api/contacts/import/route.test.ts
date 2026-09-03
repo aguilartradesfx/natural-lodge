@@ -21,6 +21,15 @@ vi.mock('@/lib/prospect-summary', () => ({
   summarizeBatch: vi.fn(async () => ({ text: 'resumen', alerts: [] })),
 }));
 
+type LogArg = {
+  workflow: string;
+  node?: string;
+  error: unknown;
+  context?: Record<string, unknown>;
+};
+const errorLog = { logWorkflowError: vi.fn(async (_input: LogArg) => {}) };
+vi.mock('@/lib/error-log', () => errorLog);
+
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
 
@@ -38,9 +47,30 @@ beforeEach(() => {
   // Reset return values that individual tests may override, so nothing bleeds
   // into the next test (mockClear() only resets call history, not implementation).
   ghl.searchContacts.mockResolvedValue([]);
+  errorLog.logWorkflowError.mockClear();
 });
 
 describe('POST /api/contacts/import', () => {
+  // Antes, un fallo inesperado devolvía un 500 mudo: el motivo real solo existía
+  // en la ventana rodante de logs de Vercel, que rota en horas. Esta ruta la
+  // dispara una persona con un archivo distinto cada vez, así que el error casi
+  // nunca se puede reproducir después.
+  it('un fallo inesperado se registra en Supabase y devuelve el motivo real', async () => {
+    const { summarizeBatch } = await import('@/lib/prospect-summary');
+    vi.mocked(summarizeBatch).mockRejectedValueOnce(new Error('Anthropic no responde'));
+    const { POST } = await import('./route');
+    const res = await POST(req('prospects.csv', true));
+    expect(res.status).toBe(500);
+    const body = await res.json();
+    expect(body.error).toContain('Anthropic no responde');
+    expect(errorLog.logWorkflowError).toHaveBeenCalledTimes(1);
+    const arg = errorLog.logWorkflowError.mock.calls[0][0];
+    expect(arg.workflow).toBe('importador_contactos');
+    expect(arg.node).toBe('previsualizacion');
+    expect(arg.context?.archivo).toBe('prospects.csv');
+    expect(arg.context?.filas).toBe(20);
+  });
+
   it('dryRun devuelve preview y NO toca GHL', async () => {
     const { POST } = await import('./route');
     const res = await POST(req('prospects.csv', true));

@@ -18,6 +18,8 @@ const ghl = {
 };
 vi.mock('@/lib/ghl', () => ghl);
 
+vi.mock('@/lib/error-log', () => ({ logWorkflowError: vi.fn(async () => {}) }));
+
 function raw(over: Partial<RawProspect>): RawProspect {
   return {
     firstName: 'Ana', lastName: 'Pérez', company: 'Viajes X', email: '', phone: '', website: '',

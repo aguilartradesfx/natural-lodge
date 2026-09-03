@@ -2,10 +2,13 @@ import { requireUser } from '@/lib/api-auth';
 import { mapProspect } from '@/lib/prospect-mapper';
 import { importProspects } from '@/lib/prospect-importer';
 import type { RawProspect } from '@/lib/prospect-types';
+import { logWorkflowError } from '@/lib/error-log';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 export const maxDuration = 120;
+
+const WORKFLOW = 'importador_contactos';
 
 export async function POST(req: Request) {
   const auth = await requireUser();
@@ -33,8 +36,21 @@ export async function POST(req: Request) {
   } catch {
     return Response.json({ error: 'Filas inválidas' }, { status: 400 });
   }
-  const report = await importProspects(mapped, {
-    onDuplicate: body?.mode === 'forceUpdate' ? 'update' : 'report',
-  });
-  return Response.json({ ok: true, report, batchTag });
+  // Mismo motivo que en la ruta de importación: si esto revienta, el motivo real
+  // tiene que sobrevivir a la ventana rodante de logs de Vercel.
+  try {
+    const report = await importProspects(mapped, {
+      onDuplicate: body?.mode === 'forceUpdate' ? 'update' : 'report',
+    });
+    return Response.json({ ok: true, report, batchTag });
+  } catch (err) {
+    await logWorkflowError({
+      workflow: WORKFLOW,
+      node: 'reintento',
+      error: err,
+      context: { filas: rows.length, batchTag, mode: body?.mode ?? 'normal' },
+    });
+    const detalle = err instanceof Error ? err.message : String(err);
+    return Response.json({ error: `No se pudo reintentar: ${detalle}` }, { status: 500 });
+  }
 }

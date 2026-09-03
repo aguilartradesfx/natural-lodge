@@ -4,10 +4,13 @@ import { validateProspects } from '@/lib/prospect-validator';
 import { mapProspect, deriveBatchTag } from '@/lib/prospect-mapper';
 import { summarizeBatch } from '@/lib/prospect-summary';
 import { importProspects } from '@/lib/prospect-importer';
+import { logWorkflowError } from '@/lib/error-log';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 export const maxDuration = 120;
+
+const WORKFLOW = 'importador_contactos';
 
 export async function POST(req: Request) {
   const auth = await requireUser();
@@ -46,24 +49,44 @@ export async function POST(req: Request) {
   const batchSeed =
     prospects[0].source && prospects[0].source !== DEFAULT_SOURCE ? prospects[0].source : file.name;
   const batchTag = deriveBatchTag(batchSeed);
-  const mapped = prospects.map((p) => mapProspect(p, batchTag));
 
-  if (dryRun) {
-    const sampleWarnings = validations.flatMap((v) => v.warnings).slice(0, 10);
-    const summary = await summarizeBatch({ metrics, sampleWarnings });
-    const preview = mapped.map((m, i) => ({
-      rowNumber: m.raw.rowNumber,
-      name: m.contact.name,
-      company: m.contact.companyName,
-      email: m.contact.email,
-      phone: m.contact.phone,
-      tags: m.tags,
-      hasContactChannel: m.hasContactChannel,
-      warnings: validations[i].warnings,
-    }));
-    return Response.json({ ok: true, format, metrics, summary, preview, batchTag });
+  // Todo lo que sigue toca servicios externos (Claude para el resumen, GHL para
+  // crear). Un fallo inesperado acá devolvía un 500 mudo y el motivo real solo
+  // vivía en la ventana rodante de logs de Vercel — que rota en horas. Esta ruta
+  // la dispara una persona con un archivo distinto cada vez, así que el error
+  // casi nunca es reproducible después. Se guarda en Supabase y se devuelve.
+  try {
+    const mapped = prospects.map((p) => mapProspect(p, batchTag));
+
+    if (dryRun) {
+      const sampleWarnings = validations.flatMap((v) => v.warnings).slice(0, 10);
+      const summary = await summarizeBatch({ metrics, sampleWarnings });
+      const preview = mapped.map((m, i) => ({
+        rowNumber: m.raw.rowNumber,
+        name: m.contact.name,
+        company: m.contact.companyName,
+        email: m.contact.email,
+        phone: m.contact.phone,
+        tags: m.tags,
+        hasContactChannel: m.hasContactChannel,
+        warnings: validations[i].warnings,
+      }));
+      return Response.json({ ok: true, format, metrics, summary, preview, batchTag });
+    }
+
+    const report = await importProspects(mapped, { startSequence });
+    return Response.json({ ok: true, report, batchTag });
+  } catch (err) {
+    await logWorkflowError({
+      workflow: WORKFLOW,
+      node: dryRun ? 'previsualizacion' : 'importacion',
+      error: err,
+      context: { archivo: file.name, filas: prospects.length, batchTag, startSequence },
+    });
+    const detalle = err instanceof Error ? err.message : String(err);
+    return Response.json(
+      { error: `No se pudo procesar el archivo: ${detalle}` },
+      { status: 500 },
+    );
   }
-
-  const report = await importProspects(mapped, { startSequence });
-  return Response.json({ ok: true, report, batchTag });
 }
