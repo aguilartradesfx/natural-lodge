@@ -19,6 +19,30 @@ export function parseTags(tagsRaw: string): string[] {
   return tagsRaw.split(',').map((t) => t.trim()).filter(Boolean);
 }
 
+/**
+ * GHL valida el país contra códigos ISO-2 y nombres completos en inglés: acepta
+ * "US", "CR", "Canada", "United States", "Costa Rica". Pero rechaza "USA" con
+ * 422 "country must be valid" — no es ni lo uno ni lo otro — y con eso se cae la
+ * fila entera. Un archivo con "USA" en todas las filas no importa ni un contacto.
+ * Verificado contra la API real el 2026-09-02.
+ *
+ * Solo traducimos los alias que no son ni ISO-2 ni nombre completo. Todo lo demás
+ * pasa tal cual: GHL ya lo acepta, y adivinar de más rompería países válidos.
+ */
+const COUNTRY_ALIASES: Record<string, string> = {
+  usa: 'US',
+  'u.s.': 'US',
+  'u.s.a.': 'US',
+  uk: 'GB',
+  'u.k.': 'GB',
+};
+
+export function normalizeCountry(value: string): string {
+  const v = (value || '').trim();
+  if (!v) return '';
+  return COUNTRY_ALIASES[v.toLowerCase()] ?? v;
+}
+
 export function slugify(s: string): string {
   return s
     .normalize('NFD')
@@ -140,7 +164,7 @@ export function mapProspect(raw: RawProspect, batchTag: string): MappedProspect 
       website: raw.website,
       city: raw.city,
       state: raw.state,
-      country: raw.country,
+      country: normalizeCountry(raw.country),
       source: raw.source,
     },
     tags,

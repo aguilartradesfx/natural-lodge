@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import type { RawProspect } from './prospect-types';
 import {
   parseTags, deriveBatchTag, contactFingerprint, mapProspect, synthesizeTags, cleanPhone,
+  normalizeCountry,
 } from './prospect-mapper';
 
 function makeRaw(over: Partial<RawProspect>): RawProspect {
@@ -69,7 +70,36 @@ describe('cleanPhone', () => {
   });
 });
 
+// Regresión del 500 del 2026-09-02: el archivo de NY traía "USA" en las 31 filas.
+// GHL acepta ISO-2 ("US") y el nombre completo ("United States"), pero rechaza
+// "USA" con 422 → ninguna fila entraba. Verificado contra la API real.
+describe('normalizeCountry', () => {
+  it('USA → US (el valor que GHL rechaza)', () => {
+    expect(normalizeCountry('USA')).toBe('US');
+  });
+  it('acepta variantes con puntos y espacios', () => {
+    expect(normalizeCountry(' u.s.a. ')).toBe('US');
+    expect(normalizeCountry('U.S.')).toBe('US');
+  });
+  it('UK → GB, que es el código ISO real', () => {
+    expect(normalizeCountry('UK')).toBe('GB');
+  });
+  it('deja pasar lo que GHL sí acepta', () => {
+    expect(normalizeCountry('Canada')).toBe('Canada');
+    expect(normalizeCountry('US')).toBe('US');
+    expect(normalizeCountry('CR')).toBe('CR');
+    expect(normalizeCountry('Costa Rica')).toBe('Costa Rica');
+  });
+  it('vacío se queda vacío', () => {
+    expect(normalizeCountry('')).toBe('');
+  });
+});
+
 describe('mapProspect', () => {
+  it('normaliza el país antes de mandarlo a GHL', () => {
+    expect(mapProspect(makeRaw({ country: 'USA' }), 'Import-x').contact.country).toBe('US');
+  });
+
   it('agrega el batch tag y Contacto-Pendiente si no hay canal', () => {
     const m = mapProspect(makeRaw({ email: '', phone: '' }), 'Import-lote');
     expect(m.tags).toContain('Import-lote');
